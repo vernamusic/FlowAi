@@ -24,3 +24,34 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.react-flow__controls {
+  background: #18181b;
+  border: 1px solid #27272a;
+  box-shadow: none;
+}
+
+.react-flow__controls-button {
+  background: #18181b;
+  color: #a1a1aa;
+  border-bottom: 1px solid #27272a;
+}
+
+.react-flow__controls-button:hover {
+  background: #27272a;
+  color: #fff;
+}
+
+.react-flow__minimap {
+  background: #18181b;
+  border: 1px solid #27272a;
+}
+
+.react-flow__minimap-mask {
+  fill: rgba(0, 0, 0, 0.45);
+}
+
+.react-flow__minimap-node {
+  fill: #52525b;
+  stroke: #71717a;
+}
