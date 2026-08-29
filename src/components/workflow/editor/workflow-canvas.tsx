@@ -1,10 +1,12 @@
 "use client";
 
 import {
+  applyNodeChanges,
   Background,
   Controls,
   MiniMap,
   ReactFlow,
+  useNodesState,
   useReactFlow,
   type Connection,
   type Edge,
@@ -13,10 +15,11 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useMemo } from "react";
+
 import { ExecutionLogs } from "@/components/workflow/execution/execution-logs";
-import { WorkflowNode } from "@/components/workflow/nodes/workflow-node";
 import { ExecutionPanel } from "@/components/workflow/execution/execution-panel";
+import { WorkflowNode } from "@/components/workflow/nodes/workflow-node";
 
 import { createWorkflowNode } from "@/lib/workflow/create-node";
 
@@ -35,15 +38,11 @@ const nodeTypes = {
 
 export function WorkflowCanvas() {
   const workflow = useWorkflowStore((state) => state.workflow);
-
   const execution = useWorkflowStore((state) => state.execution);
 
   const addNode = useWorkflowStore((state) => state.addNode);
-
   const addEdge = useWorkflowStore((state) => state.addEdge);
-
   const removeNode = useWorkflowStore((state) => state.removeNode);
-
   const removeEdge = useWorkflowStore((state) => state.removeEdge);
 
   const updateNodePosition = useWorkflowStore(
@@ -55,33 +54,99 @@ export function WorkflowCanvas() {
   const { screenToFlowPosition } = useReactFlow();
 
   /**
-   * React Flow Nodes
+   * Build React Flow nodes from workflow state.
    *
-   * Execution status is injected
-   * into every node.
+   * This is the external/source representation.
    */
-  const nodes: Node[] =
-    workflow?.nodes.map((node) => {
-      const executionNode = execution?.nodes.find(
-        (item) => item.nodeId === node.id,
-      );
+  const workflowNodes = useMemo<Node[]>(() => {
+    return (
+      workflow?.nodes.map((node) => {
+        const executionNode = execution?.nodes.find(
+          (item) => item.nodeId === node.id,
+        );
 
-      return workflowNodeToReactFlowNode(node, executionNode?.status);
-    }) ?? [];
+        return workflowNodeToReactFlowNode(node, executionNode?.status);
+      }) ?? []
+    );
+  }, [workflow, execution]);
 
   /**
-   * React Flow Edges
+   * React Flow keeps its own internal node state.
+   *
+   * This is important because React Flow needs to store
+   * measured width/height of every node.
    */
-  const edges: Edge[] = workflow?.edges.map(workflowEdgeToReactFlowEdge) ?? [];
+  const [nodes, setNodes] = useNodesState(workflowNodes);
+
+  /**
+   * Sync external workflow changes into React Flow.
+   *
+   * We intentionally don't recreate nodes on every render.
+   * Otherwise React Flow can lose its measured dimensions.
+   */
+  useEffect(() => {
+    setNodes((currentNodes) => {
+      return workflowNodes.map((newNode) => {
+        const currentNode = currentNodes.find((node) => node.id === newNode.id);
+
+        if (!currentNode) {
+          return newNode;
+        }
+
+        return {
+          ...newNode,
+
+          /**
+           * Preserve React Flow's internal measurement.
+           */
+          width: currentNode.width,
+          height: currentNode.height,
+          measured: currentNode.measured,
+
+          /**
+           * Preserve current React Flow position.
+           */
+          position: currentNode.position,
+        };
+      });
+    });
+  }, [workflowNodes, setNodes]);
+
+  /**
+   * Edges
+   */
+  const edges: Edge[] = useMemo(() => {
+    return workflow?.edges.map(workflowEdgeToReactFlowEdge) ?? [];
+  }, [workflow]);
 
   /**
    * Node changes
    */
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      /**
+       * IMPORTANT:
+       *
+       * Apply ALL React Flow changes.
+       *
+       * This includes:
+       *
+       * - position
+       * - dimensions
+       * - select
+       * - remove
+       * - etc.
+       *
+       * Dimensions are required for MiniMap.
+       */
+      setNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
+
+      /**
+       * Sync only workflow-related changes to Zustand.
+       */
       changes.forEach((change) => {
         /**
-         * Node position changed
+         * Position changed
          */
         if (change.type === "position" && change.position) {
           updateNodePosition(change.id, {
@@ -98,7 +163,7 @@ export function WorkflowCanvas() {
         }
       });
     },
-    [updateNodePosition, removeNode],
+    [setNodes, updateNodePosition, removeNode],
   );
 
   /**
@@ -165,13 +230,9 @@ export function WorkflowCanvas() {
 
       addEdge({
         id: crypto.randomUUID(),
-
         source: connection.source,
-
         target: connection.target,
-
         sourceHandle: connection.sourceHandle ?? undefined,
-
         targetHandle: connection.targetHandle ?? undefined,
       });
     },
@@ -215,12 +276,42 @@ export function WorkflowCanvas() {
 
         <Controls />
 
-        <MiniMap />
+        <MiniMap
+          nodeColor={(node) => {
+            const category = (
+              node.data as {
+                category?: string;
+              }
+            )?.category;
+
+            switch (category) {
+              case "trigger":
+                return "#f59e0b";
+
+              case "ai":
+                return "#8b5cf6";
+
+              case "logic":
+                return "#3b82f6";
+
+              case "action":
+                return "#10b981";
+
+              default:
+                return "#71717a";
+            }
+          }}
+          nodeStrokeWidth={0}
+          maskColor="rgba(0, 0, 0, 0.65)"
+          pannable
+          zoomable
+        />
       </ReactFlow>
 
-      <ExecutionPanel />
-      <div className="absolute bottom-4 right-4 z-20 w-[420px]">
+      <div className="absolute bottom-4 left-1/2 z-20 flex w-[460px] -translate-x-1/2 flex-col gap-3">
         <ExecutionLogs />
+
+        <ExecutionPanel />
       </div>
     </div>
   );

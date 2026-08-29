@@ -11,10 +11,10 @@ import { WorkflowInspector } from "@/components/workflow/inspector/workflow-insp
 export function WorkflowEditor() {
   return (
     <ReactFlowProvider>
-      <div className="flex h-[calc(100vh-128px)] w-full">
+      <div className="flex h-full min-h-0 w-full">
         <NodeLibrary />
 
-        <main className="min-w-0 flex-1">
+        <main className="min-h-0 min-w-0 flex-1">
           <WorkflowCanvas />
         </main>
 

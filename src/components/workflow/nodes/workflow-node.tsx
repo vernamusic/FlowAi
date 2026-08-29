@@ -68,7 +68,7 @@ export function WorkflowNode({ data, selected }: NodeProps) {
   return (
     <div
       className={`
-        min-w-64
+        w-64
         overflow-hidden
         rounded-xl
         border

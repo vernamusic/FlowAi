@@ -68,8 +68,12 @@ interface WorkflowState {
 
   execution: WorkflowExecution | null;
 
+  isExecutionPanelOpen: boolean;
+  isExecutionLogsOpen: boolean;
   runWorkflow: () => Promise<void>;
 
+  closeExecutionPanel: () => void;
+  closeExecutionLogs: () => void;
   clearExecution: () => void;
 }
 
@@ -77,6 +81,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   workflow: null,
   execution: null,
   selectedNodeId: null,
+
+  isExecutionPanelOpen: false,
+  isExecutionLogsOpen: false,
 
   // --------------------------------------------------
   // Workflow
@@ -424,6 +431,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       return;
     }
 
+    set({
+      isExecutionPanelOpen: true,
+      isExecutionLogsOpen: true,
+      execution: null,
+    });
+
     await executeWorkflow(workflow, (event: ExecutionEvent) => {
       switch (event.type) {
         case "workflow-started":
@@ -538,8 +551,24 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       }
     });
   },
+  // --------------------------------------------------
+  // Execution UI
+  // --------------------------------------------------
+
+  closeExecutionPanel: () =>
+    set({
+      isExecutionPanelOpen: false,
+    }),
+
+  closeExecutionLogs: () =>
+    set({
+      isExecutionLogsOpen: false,
+    }),
+
   clearExecution: () =>
     set({
       execution: null,
+      isExecutionPanelOpen: false,
+      isExecutionLogsOpen: false,
     }),
 }));

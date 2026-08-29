@@ -6,7 +6,7 @@ import type {
   WorkflowNode,
 } from "@/types/workflow";
 import { createVariableContext } from "@/lib/workflow/variables/variable-context";
-
+import { executeHttpRequest } from "@/lib/workflow/execution/http-request";
 import { resolveValue } from "@/lib/workflow/variables/variable-resolver";
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -65,10 +65,10 @@ export type ExecutionEvent =
 /**
  * Simulates execution of a single node.
  */
-function executeNode(
+async function executeNode(
   node: WorkflowNode,
   input: Record<string, unknown>,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   switch (node.type) {
     case "manual-trigger":
       return {
@@ -86,13 +86,38 @@ function executeNode(
         }`,
       };
 
-    case "http-request":
-      return {
-        status: 200,
-        success: true,
-        data: input,
-      };
+    case "http-request": {
+      const result = await executeHttpRequest({
+        url:
+          typeof node.data.config.url === "string"
+            ? node.data.config.url
+            : undefined,
 
+        method:
+          typeof node.data.config.method === "string"
+            ? node.data.config.method
+            : "GET",
+
+        headers: Array.isArray(node.data.config.headers)
+          ? node.data.config.headers
+          : undefined,
+
+        queryParams:
+          node.data.config.queryParams &&
+          typeof node.data.config.queryParams === "object"
+            ? (node.data.config.queryParams as Record<string, string>)
+            : undefined,
+
+        body: node.data.config.body,
+
+        timeout:
+          typeof node.data.config.timeout === "number"
+            ? node.data.config.timeout
+            : 10000,
+      });
+
+      return result;
+    }
     case "condition":
       return {
         result: true,
@@ -323,10 +348,6 @@ export async function executeWorkflow(
       node.id,
     );
 
-    startLog.input = input;
-
-    execution.logs.push(startLog);
-
     onEvent?.({
       type: "log",
       log: startLog,
@@ -353,7 +374,7 @@ export async function executeWorkflow(
         },
       };
 
-      const output = executeNode(executableNode, input);
+      const output = await executeNode(executableNode, input);
 
       const completedAt = new Date().toISOString();
 

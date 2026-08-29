@@ -4,7 +4,9 @@ import { Plus, Trash2 } from "lucide-react";
 
 import { useWorkflowStore } from "@/store/workflow.store";
 import { VariableInput } from "../variables/variable-input";
+
 import type { WorkflowVariable } from "@/types/workflow";
+
 interface HTTPRequestInspectorProps {
   nodeId: string;
 }

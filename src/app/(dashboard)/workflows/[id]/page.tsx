@@ -11,11 +11,10 @@ export default async function WorkflowPage({ params }: WorkflowPageProps) {
   const { id } = await params;
 
   return (
-    <div className="-m-6">
-      <div className="flex h-16 items-center justify-between border-b border-zinc-800 bg-zinc-950 px-6">
+    <div className="-m-6 flex min-h-0 flex-1 flex-col">
+      <div className="flex h-16 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-950 px-6">
         <div>
           <p className="text-xs text-zinc-500">Workflow</p>
-
           <h1 className="text-sm font-medium">{id}</h1>
         </div>
 
@@ -28,7 +27,9 @@ export default async function WorkflowPage({ params }: WorkflowPageProps) {
         </div>
       </div>
 
-      <WorkflowEditor />
+      <div className="min-h-0 flex-1">
+        <WorkflowEditor />
+      </div>
     </div>
   );
 }
