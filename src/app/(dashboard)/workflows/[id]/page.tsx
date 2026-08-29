@@ -1,5 +1,6 @@
 import { WorkflowEditor } from "@/components/workflow/editor/workflow-editor";
-import { RunWorkflowButton } from "@/lib/workflow/execution/run-workflow-button";
+import { WorkflowActions } from "@/components/workflow/workflow-actions";
+import { WorkflowNameInput } from "@/components/workflow/workflow-name-input";
 
 interface WorkflowPageProps {
   params: Promise<{
@@ -11,24 +12,21 @@ export default async function WorkflowPage({ params }: WorkflowPageProps) {
   const { id } = await params;
 
   return (
-    <div className="-m-6 flex min-h-0 flex-1 flex-col">
-      <div className="flex h-16 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-950 px-6">
-        <div>
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      {/* Workflow Header */}
+      <div className="flex h-16 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-950 px-4 sm:px-6">
+        <div className="min-w-0">
           <p className="text-xs text-zinc-500">Workflow</p>
-          <h1 className="text-sm font-medium">{id}</h1>
+
+          <WorkflowNameInput workflowId={id} />
         </div>
 
-        <div className="flex items-center gap-2">
-          <button className="rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-900">
-            Save
-          </button>
-
-          <RunWorkflowButton />
-        </div>
+        <WorkflowActions workflowId={id} />
       </div>
 
+      {/* Editor */}
       <div className="min-h-0 flex-1">
-        <WorkflowEditor />
+        <WorkflowEditor workflowId={id} />
       </div>
     </div>
   );

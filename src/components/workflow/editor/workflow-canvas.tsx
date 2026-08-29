@@ -308,7 +308,7 @@ export function WorkflowCanvas() {
         />
       </ReactFlow>
 
-      <div className="absolute bottom-4 left-1/2 z-20 flex w-[460px] -translate-x-1/2 flex-col gap-3">
+      <div className="absolute bottom-3 left-1/2 z-20 flex w-[calc(100%-1.5rem)] max-w-[460px] -translate-x-1/2 flex-col gap-3 sm:bottom-4 sm:w-[460px]">
         <ExecutionLogs />
 
         <ExecutionPanel />

@@ -7,6 +7,7 @@ import type { WorkflowVariable } from "@/types/workflow";
 import { VariablePicker } from "./variable-picker";
 
 interface VariableInputProps {
+  id?: string;
   value: string;
   variables: WorkflowVariable[];
   onChange: (value: string) => void;
@@ -15,6 +16,7 @@ interface VariableInputProps {
 }
 
 export function VariableInput({
+  id,
   value,
   variables,
   onChange,
@@ -105,6 +107,7 @@ export function VariableInput({
   return (
     <div className="relative">
       <textarea
+        id={id}
         ref={textareaRef}
         value={value}
         rows={rows}

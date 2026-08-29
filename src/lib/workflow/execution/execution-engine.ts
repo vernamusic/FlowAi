@@ -12,6 +12,39 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function evaluateCondition(
+  leftOperand: unknown,
+  operator: unknown,
+  rightOperand: unknown,
+): boolean {
+  const left = String(leftOperand ?? "");
+  const right = String(rightOperand ?? "");
+
+  switch (operator) {
+    case "not_equals":
+      return left !== right;
+    case "contains":
+      return left.includes(right);
+    case "not_contains":
+      return !left.includes(right);
+    case "greater_than":
+      return Number(left) > Number(right);
+    case "less_than":
+      return Number(left) < Number(right);
+    case "is_empty":
+      return left.trim().length === 0;
+    case "is_not_empty":
+      return left.trim().length > 0;
+    case "is_true":
+      return left === "true";
+    case "is_false":
+      return left === "false";
+    case "equals":
+    default:
+      return left === right;
+  }
+}
+
 /**
  * Create execution log
  */
@@ -69,12 +102,23 @@ async function executeNode(
   node: WorkflowNode,
   input: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+  void input;
+
   switch (node.type) {
     case "manual-trigger":
       return {
-        name: "Amir",
-        email: "amir@example.com",
-        userId: "user_123",
+        name:
+          typeof node.data.config.name === "string"
+            ? node.data.config.name
+            : "Amir",
+        email:
+          typeof node.data.config.email === "string"
+            ? node.data.config.email
+            : "amir@example.com",
+        userId:
+          typeof node.data.config.userId === "string"
+            ? node.data.config.userId
+            : "user_123",
       };
 
     case "ai-prompt":
@@ -103,9 +147,12 @@ async function executeNode(
           : undefined,
 
         queryParams:
-          node.data.config.queryParams &&
-          typeof node.data.config.queryParams === "object"
-            ? (node.data.config.queryParams as Record<string, string>)
+          Array.isArray(node.data.config.queryParams) ||
+          (node.data.config.queryParams &&
+            typeof node.data.config.queryParams === "object")
+            ? (node.data.config.queryParams as
+                | { key: string; value: string }[]
+                | Record<string, string>)
             : undefined,
 
         body: node.data.config.body,
@@ -114,13 +161,38 @@ async function executeNode(
           typeof node.data.config.timeout === "number"
             ? node.data.config.timeout
             : 10000,
+
+        authType:
+          node.data.config.authType === "bearer" ||
+          node.data.config.authType === "basic"
+            ? node.data.config.authType
+            : "none",
+
+        token:
+          typeof node.data.config.token === "string"
+            ? node.data.config.token
+            : undefined,
+
+        username:
+          typeof node.data.config.username === "string"
+            ? node.data.config.username
+            : undefined,
+
+        password:
+          typeof node.data.config.password === "string"
+            ? node.data.config.password
+            : undefined,
       });
 
       return result;
     }
     case "condition":
       return {
-        result: true,
+        result: evaluateCondition(
+          node.data.config.leftOperand,
+          node.data.config.operator,
+          node.data.config.rightOperand,
+        ),
       };
 
     default:
@@ -142,8 +214,30 @@ function findRootNodes(workflow: Workflow): WorkflowNode[] {
 /**
  * Find children of a node.
  */
-function getChildren(workflow: Workflow, nodeId: string): WorkflowNode[] {
-  const edges = workflow.edges.filter((edge) => edge.source === nodeId);
+function getChildren(
+  workflow: Workflow,
+  node: WorkflowNode,
+  conditionResult?: boolean,
+): WorkflowNode[] {
+  const edges = workflow.edges.filter((edge) => {
+    if (edge.source !== node.id) {
+      return false;
+    }
+
+    if (node.type !== "condition") {
+      return true;
+    }
+
+    if (edge.sourceHandle === "true") {
+      return conditionResult === true;
+    }
+
+    if (edge.sourceHandle === "false") {
+      return conditionResult === false;
+    }
+
+    return true;
+  });
 
   return edges
     .map((edge) => workflow.nodes.find((node) => node.id === edge.target))
@@ -443,7 +537,11 @@ export async function executeWorkflow(
       /**
        * Add children.
        */
-      const children = getChildren(workflow, node.id);
+      const conditionResult =
+        node.type === "condition" && typeof output.result === "boolean"
+          ? output.result
+          : undefined;
+      const children = getChildren(workflow, node, conditionResult);
 
       for (const child of children) {
         if (!completed.has(child.id) && !failed.has(child.id)) {

@@ -4,17 +4,26 @@ interface HttpHeader {
   value: string;
 }
 
+interface HttpKeyValueItem extends HttpHeader {
+  id?: string;
+}
+
 interface HttpRequestConfig {
   url?: string;
   method?: string;
 
   headers?: HttpHeader[];
 
-  queryParams?: Record<string, string>;
+  queryParams?: HttpKeyValueItem[] | Record<string, string>;
 
   body?: unknown;
 
   timeout?: number;
+
+  authType?: "none" | "bearer" | "basic";
+  token?: string;
+  username?: string;
+  password?: string;
 }
 interface HttpRequestOutput extends Record<string, unknown> {
   status: number;
@@ -33,20 +42,32 @@ export async function executeHttpRequest(
 
   const method = (config.method ?? "GET").toUpperCase();
 
-  const url = new URL(config.url);
+  let url: URL;
+
+  try {
+    url = new URL(config.url);
+  } catch {
+    throw new Error("Enter a valid absolute URL, including http:// or https://.");
+  }
 
   /**
    * Query params
    */
-  if (config.queryParams) {
-    for (const [key, value] of Object.entries(config.queryParams)) {
+  const queryParams = Array.isArray(config.queryParams)
+    ? config.queryParams
+        .filter((item) => item.key.trim())
+        .map((item) => [item.key, item.value] as const)
+    : Object.entries(config.queryParams ?? {});
+
+  for (const [key, value] of queryParams) {
+    if (key.trim()) {
       url.searchParams.set(key, String(value));
     }
   }
 
   const controller = new AbortController();
 
-  const timeout = config.timeout ?? 10000;
+  const timeout = Math.min(Math.max(config.timeout ?? 10000, 1000), 120000);
 
   const timeoutId = setTimeout(() => {
     controller.abort();
@@ -64,6 +85,19 @@ export async function executeHttpRequest(
       }
 
       headers[header.key] = header.value;
+    }
+
+    const hasAuthorization = Object.keys(headers).some(
+      (key) => key.toLowerCase() === "authorization",
+    );
+
+    if (!hasAuthorization && config.authType === "bearer" && config.token) {
+      headers.Authorization = `Bearer ${config.token}`;
+    }
+
+    if (!hasAuthorization && config.authType === "basic") {
+      const credentials = `${config.username ?? ""}:${config.password ?? ""}`;
+      headers.Authorization = `Basic ${btoa(credentials)}`;
     }
 
     /**
@@ -98,13 +132,6 @@ export async function executeHttpRequest(
         body = String(config.body);
       }
     }
-    console.log("========== HTTP REQUEST ==========");
-    console.log("URL:", url.toString());
-    console.log("METHOD:", method);
-    console.log("HEADERS:", headers);
-    console.log("BODY:", body);
-    console.log("BODY TYPE:", typeof body);
-    console.log("==================================");
     /**
      * Request
      */
@@ -114,12 +141,6 @@ export async function executeHttpRequest(
       body,
       signal: controller.signal,
     });
-    console.log("========== HTTP RESPONSE ==========");
-    console.log("STATUS:", response.status);
-    console.log("STATUS TEXT:", response.statusText);
-    console.log("CONTENT-TYPE:", response.headers.get("content-type"));
-    console.log("ACCEPT-POST:", response.headers.get("accept-post"));
-    console.log("==================================");
     /**
      * Response body
      */

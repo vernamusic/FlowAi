@@ -1,6 +1,6 @@
 "use client";
 
-import { Braces, Check, Hash, Type, ToggleLeft, Box } from "lucide-react";
+import { Braces, Hash, Type, ToggleLeft, Box } from "lucide-react";
 
 import type { WorkflowVariable } from "@/types/workflow";
 

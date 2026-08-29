@@ -1,5 +1,7 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
+
 import { useWorkflowStore } from "@/store/workflow.store";
 
 import { AIPromptInspector } from "./ai-prompt-inspector";
@@ -7,14 +9,37 @@ import { ManualTriggerInspector } from "./manual-trigger-inspector";
 import { HTTPRequestInspector } from "./http-request-inspector";
 import { ConditionInspector } from "./condition-inspector";
 
-export function WorkflowInspector() {
+interface WorkflowInspectorProps {
+  className?: string;
+}
+
+export function WorkflowInspector({
+  className = "",
+}: WorkflowInspectorProps) {
   const workflow = useWorkflowStore((state) => state.workflow);
 
   const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId);
+  const removeNode = useWorkflowStore((state) => state.removeNode);
+
+  const handleDeleteNode = () => {
+    if (!selectedNodeId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Delete this node and all of its connected edges? This cannot be undone.",
+    );
+
+    if (confirmed) {
+      removeNode(selectedNodeId);
+    }
+  };
 
   if (!selectedNodeId || !workflow) {
     return (
-      <aside className="w-80 shrink-0 border-l border-zinc-800 bg-zinc-950">
+      <aside
+        className={`w-80 shrink-0 border-l border-zinc-800 bg-zinc-950 ${className}`}
+      >
         <div className="flex h-full items-center justify-center px-6 text-center">
           <div>
             <p className="text-sm font-medium text-zinc-400">
@@ -37,17 +62,33 @@ export function WorkflowInspector() {
   }
 
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col border-l border-zinc-800 bg-zinc-950">
+    <aside
+      className={`flex h-full w-80 shrink-0 flex-col border-l border-zinc-800 bg-zinc-950 ${className}`}
+    >
       {/* Header */}
 
       <div className="border-b border-zinc-800 px-5 py-4">
-        <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-600">
-          Inspector
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-600">
+              Inspector
+            </p>
 
-        <h2 className="mt-1 text-sm font-semibold text-white">
-          {node.data.label}
-        </h2>
+            <h2 className="mt-1 truncate text-sm font-semibold text-white">
+              {node.data.label}
+            </h2>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleDeleteNode}
+            aria-label={`Delete ${node.data.label}`}
+            title="Delete node"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 transition hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
 
         <p className="mt-1 text-xs leading-5 text-zinc-500">
           {node.data.description}

@@ -1,5 +1,10 @@
 import { create } from "zustand";
 import { createVariableKey } from "@/lib/workflow/variables/variable-context";
+import {
+  deleteSavedWorkflow,
+  getSavedWorkflow,
+  saveWorkflow,
+} from "@/lib/workflow/workflow-storage";
 import type {
   Workflow,
   WorkflowEdge,
@@ -23,6 +28,9 @@ interface WorkflowState {
    * Workflow
    */
   setWorkflow: (workflow: Workflow) => void;
+  loadWorkflow: (workflowId: string) => boolean;
+  saveCurrentWorkflow: () => void;
+  deleteWorkflow: (workflowId: string) => void;
   updateWorkflowName: (name: string) => void;
   resetWorkflow: () => void;
 
@@ -94,6 +102,42 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       workflow,
       selectedNodeId: null,
     }),
+
+  loadWorkflow: (workflowId) => {
+    const workflow = getSavedWorkflow(workflowId);
+
+    if (!workflow) {
+      return false;
+    }
+
+    set({
+      workflow,
+      execution: null,
+      selectedNodeId: null,
+    });
+
+    return true;
+  },
+
+  saveCurrentWorkflow: () => {
+    const workflow = get().workflow;
+
+    if (workflow) {
+      saveWorkflow(workflow);
+    }
+  },
+
+  deleteWorkflow: (workflowId) => {
+    deleteSavedWorkflow(workflowId);
+
+    if (get().workflow?.id === workflowId) {
+      set({
+        workflow: null,
+        execution: null,
+        selectedNodeId: null,
+      });
+    }
+  },
 
   updateWorkflowName: (name) =>
     set((state) => {
@@ -572,3 +616,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       isExecutionLogsOpen: false,
     }),
 }));
+
+if (typeof window !== "undefined") {
+  useWorkflowStore.subscribe((state, previousState) => {
+    if (state.workflow && state.workflow !== previousState.workflow) {
+      saveWorkflow(state.workflow);
+    }
+  });
+}

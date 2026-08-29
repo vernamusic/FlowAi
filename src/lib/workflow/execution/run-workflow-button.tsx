@@ -18,7 +18,7 @@ export function RunWorkflowButton() {
       type="button"
       disabled={!workflow || isRunning}
       onClick={runWorkflow}
-      className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+      className="flex min-h-10 items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 disabled:cursor-not-allowed disabled:opacity-40"
     >
       <Play className="h-4 w-4" />
 

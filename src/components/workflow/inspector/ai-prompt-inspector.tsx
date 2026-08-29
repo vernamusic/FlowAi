@@ -10,6 +10,10 @@ export function AIPromptInspector({ nodeId }: AIPromptInspectorProps) {
 
   const updateNodeConfig = useWorkflowStore((state) => state.updateNodeConfig);
 
+  const getAvailableVariables = useWorkflowStore(
+    (state) => state.getAvailableVariables,
+  );
+
   const node = workflow?.nodes.find((item) => item.id === nodeId);
 
   if (!node) {
@@ -33,9 +37,6 @@ export function AIPromptInspector({ nodeId }: AIPromptInspectorProps) {
       [key]: value,
     });
   };
-  const getAvailableVariables = useWorkflowStore(
-    (state) => state.getAvailableVariables,
-  );
   const variables = getAvailableVariables(nodeId);
 
   return (
@@ -51,6 +52,7 @@ export function AIPromptInspector({ nodeId }: AIPromptInspectorProps) {
         </label>
 
         <VariableInput
+          id="ai-prompt"
           value={prompt}
           variables={variables}
           onChange={(value) => updateConfig("prompt", value)}

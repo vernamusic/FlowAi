@@ -43,6 +43,8 @@ export function HTTPRequestInspector({ nodeId }: HTTPRequestInspectorProps) {
   const authType =
     typeof config.authType === "string" ? config.authType : "none";
 
+  const timeout = typeof config.timeout === "number" ? config.timeout : 10000;
+
   const headers = Array.isArray(config.headers)
     ? (config.headers as KeyValueItem[])
     : [];
@@ -117,11 +119,15 @@ export function HTTPRequestInspector({ nodeId }: HTTPRequestInspectorProps) {
         {/* Method */}
 
         <div>
-          <label className="mb-2 block text-[11px] font-medium text-zinc-400">
+          <label
+            htmlFor="http-method"
+            className="mb-2 block text-[11px] font-medium text-zinc-400"
+          >
             Method
           </label>
 
           <select
+            id="http-method"
             value={method}
             onChange={(event) => updateConfig("method", event.target.value)}
             className="
@@ -135,7 +141,7 @@ export function HTTPRequestInspector({ nodeId }: HTTPRequestInspectorProps) {
               text-xs
               text-zinc-200
               outline-none
-              focus:border-zinc-600
+              focus:border-violet-400
             "
           >
             <option value="GET">GET</option>
@@ -149,16 +155,20 @@ export function HTTPRequestInspector({ nodeId }: HTTPRequestInspectorProps) {
         {/* URL */}
 
         <div>
-          <label className="mb-2 block text-[11px] font-medium text-zinc-400">
+          <label
+            htmlFor="http-url"
+            className="mb-2 block text-[11px] font-medium text-zinc-400"
+          >
             URL
           </label>
 
           <VariableInput
+            id="http-url"
             value={url}
             variables={variables}
             onChange={(value) => updateConfig("url", value)}
             placeholder="https://api.example.com/users/{{...}}"
-            rows={3}
+            rows={2}
           />
         </div>
       </section>
@@ -178,6 +188,7 @@ export function HTTPRequestInspector({ nodeId }: HTTPRequestInspectorProps) {
           <button
             type="button"
             onClick={() => addListItem("queryParams")}
+            aria-label="Add query parameter"
             className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-800 text-zinc-500 transition hover:bg-zinc-900 hover:text-zinc-300"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -218,6 +229,7 @@ export function HTTPRequestInspector({ nodeId }: HTTPRequestInspectorProps) {
           <button
             type="button"
             onClick={() => addListItem("headers")}
+            aria-label="Add request header"
             className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-800 text-zinc-500 transition hover:bg-zinc-900 hover:text-zinc-300"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -248,9 +260,18 @@ export function HTTPRequestInspector({ nodeId }: HTTPRequestInspectorProps) {
       <section className="space-y-3">
         <div>
           <p className="text-xs font-medium text-zinc-300">Authentication</p>
+
+          <p className="mt-1 text-[10px] text-zinc-600">
+            Authorization headers are added automatically.
+          </p>
         </div>
 
+        <label htmlFor="http-auth" className="sr-only">
+          Authentication type
+        </label>
+
         <select
+          id="http-auth"
           value={authType}
           onChange={(event) => updateConfig("authType", event.target.value)}
           className="
@@ -264,7 +285,7 @@ export function HTTPRequestInspector({ nodeId }: HTTPRequestInspectorProps) {
             text-xs
             text-zinc-200
             outline-none
-            focus:border-zinc-600
+            focus:border-violet-400
           "
         >
           <option value="none">None</option>
@@ -275,14 +296,78 @@ export function HTTPRequestInspector({ nodeId }: HTTPRequestInspectorProps) {
         </select>
 
         {authType === "bearer" && (
-          <VariableInput
-            value={typeof config.token === "string" ? config.token : ""}
-            variables={variables}
-            onChange={(value) => updateConfig("token", value)}
-            placeholder="Bearer token"
-            rows={2}
-          />
+          <div>
+            <label htmlFor="http-token" className="mb-2 block text-[11px] font-medium text-zinc-400">
+              Token
+            </label>
+
+            <VariableInput
+              id="http-token"
+              value={typeof config.token === "string" ? config.token : ""}
+              variables={variables}
+              onChange={(value) => updateConfig("token", value)}
+              placeholder="Bearer token"
+              rows={2}
+            />
+          </div>
         )}
+
+        {authType === "basic" && (
+          <div className="grid grid-cols-1 gap-3">
+            <div>
+              <label htmlFor="http-username" className="mb-2 block text-[11px] font-medium text-zinc-400">
+                Username
+              </label>
+              <input
+                id="http-username"
+                value={typeof config.username === "string" ? config.username : ""}
+                onChange={(event) => updateConfig("username", event.target.value)}
+                autoComplete="username"
+                className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-xs text-zinc-200 outline-none placeholder:text-zinc-700 focus:border-violet-400"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="http-password" className="mb-2 block text-[11px] font-medium text-zinc-400">
+                Password
+              </label>
+              <input
+                id="http-password"
+                type="password"
+                value={typeof config.password === "string" ? config.password : ""}
+                onChange={(event) => updateConfig("password", event.target.value)}
+                autoComplete="current-password"
+                className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-xs text-zinc-200 outline-none placeholder:text-zinc-700 focus:border-violet-400"
+              />
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-3">
+        <div>
+          <label htmlFor="http-timeout" className="text-xs font-medium text-zinc-300">
+            Request timeout
+          </label>
+
+          <p className="mt-1 text-[10px] text-zinc-600">
+            Requests are cancelled after this duration.
+          </p>
+        </div>
+
+        <div className="relative">
+          <input
+            id="http-timeout"
+            type="number"
+            min={1000}
+            max={120000}
+            step={1000}
+            value={timeout}
+            onChange={(event) => updateConfig("timeout", Number(event.target.value))}
+            className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 pr-12 text-xs text-zinc-200 outline-none focus:border-violet-400"
+          />
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500">ms</span>
+        </div>
       </section>
 
       {/* Body */}
@@ -298,6 +383,7 @@ export function HTTPRequestInspector({ nodeId }: HTTPRequestInspectorProps) {
           </div>
 
           <VariableInput
+            id="http-body"
             value={body}
             variables={variables}
             onChange={(value) => updateConfig("body", value)}
@@ -332,6 +418,7 @@ function KeyValueRow({
     <div className="group rounded-lg border border-zinc-800 bg-zinc-900/40 p-2">
       <div className="flex items-start gap-2">
         <input
+          aria-label="Key"
           value={item.key}
           onChange={(event) => onChange("key", event.target.value)}
           placeholder="Key"
@@ -355,6 +442,7 @@ function KeyValueRow({
         <button
           type="button"
           onClick={onRemove}
+          aria-label="Remove field"
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-700 transition hover:bg-red-500/10 hover:text-red-400"
         >
           <Trash2 className="h-3.5 w-3.5" />

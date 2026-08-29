@@ -21,7 +21,11 @@ const categories = [
   },
 ] as const;
 
-export function NodeLibrary() {
+interface NodeLibraryProps {
+  className?: string;
+}
+
+export function NodeLibrary({ className = "" }: NodeLibraryProps) {
   const handleDragStart = (
     event: React.DragEvent<HTMLDivElement>,
     type: string,
@@ -32,7 +36,9 @@ export function NodeLibrary() {
   };
 
   return (
-    <aside className="w-64 shrink-0 border-r border-zinc-800 bg-zinc-950">
+    <aside
+      className={`h-full w-64 shrink-0 overflow-y-auto border-r border-zinc-800 bg-zinc-950 ${className}`}
+    >
       <div className="border-b border-zinc-800 px-4 py-4">
         <h2 className="text-sm font-semibold">Node Library</h2>
 

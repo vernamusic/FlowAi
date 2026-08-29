@@ -149,11 +149,39 @@ export function WorkflowNode({ data, selected }: NodeProps) {
 
       {/* Source Handle */}
 
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        className="!h-2 !w-2 !border-0 !bg-zinc-500"
-      />
+      {nodeData.category !== "logic" && (
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          className="!h-2 !w-2 !border-0 !bg-zinc-500"
+        />
+      )}
+
+      {nodeData.category === "logic" && (
+        <>
+          <Handle
+            id="true"
+            type="source"
+            position={Position.Right}
+            className="!h-2.5 !w-2.5 !border-0 !bg-emerald-400"
+          />
+
+          <Handle
+            id="false"
+            type="source"
+            position={Position.Left}
+            className="!h-2.5 !w-2.5 !border-0 !bg-red-400"
+          />
+
+          <span className="absolute -right-1 top-1/2 translate-x-full -translate-y-1/2 text-[9px] font-medium text-emerald-400">
+            True
+          </span>
+
+          <span className="absolute -left-1 top-1/2 -translate-x-full -translate-y-1/2 text-[9px] font-medium text-red-400">
+            False
+          </span>
+        </>
+      )}
     </div>
   );
 }

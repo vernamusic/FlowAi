@@ -1,9 +1,10 @@
 import { NewWorkflowButton } from "@/components/workflow/new-workflow-button";
+import { WorkflowList } from "@/components/workflow/workflow-list";
 
 export default function WorkflowsPage() {
   return (
-    <section>
-      <div className="flex items-start justify-between">
+    <section className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm text-zinc-500">Automation</p>
 
@@ -19,13 +20,7 @@ export default function WorkflowsPage() {
         <NewWorkflowButton />
       </div>
 
-      <div className="mt-8 rounded-xl border border-dashed border-zinc-800 p-12 text-center">
-        <p className="text-sm text-zinc-500">No workflows yet.</p>
-
-        <p className="mt-1 text-sm text-zinc-600">
-          Create your first workflow to get started.
-        </p>
-      </div>
+      <WorkflowList />
     </section>
   );
 }

@@ -22,7 +22,7 @@ export function NewWorkflowButton() {
     <button
       type="button"
       onClick={handleCreate}
-      className="rounded-lg bg-violet-500 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-violet-400"
+      className="inline-flex min-h-10 items-center justify-center rounded-lg bg-violet-500 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-violet-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950"
     >
       + New Workflow
     </button>
