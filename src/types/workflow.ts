@@ -71,9 +71,19 @@ export interface WorkflowVariable {
   type: "string" | "number" | "boolean" | "object";
 }
 
-export type ExecutionStatus = "idle" | "running" | "success" | "error";
+export type ExecutionStatus =
+  | "idle"
+  | "running"
+  | "success"
+  | "error"
+  | "canceled";
 
-export type NodeExecutionStatus = "pending" | "running" | "success" | "error";
+export type NodeExecutionStatus =
+  | "pending"
+  | "running"
+  | "success"
+  | "error"
+  | "skipped";
 
 export interface NodeExecution {
   nodeId: string;
@@ -109,6 +119,10 @@ export interface WorkflowExecution {
   nodes: NodeExecution[];
 
   logs: ExecutionLog[];
+
+  mode?: "live" | "dry-run";
+
+  canceledAt?: string;
 }
 
 export type ExecutionLogLevel = "info" | "success" | "error";
@@ -133,6 +147,8 @@ export interface ExecutionLog {
   output?: Record<string, unknown>;
 
   error?: string;
+
+  details?: Record<string, unknown>;
 }
 
 export type ExecutionEvent =

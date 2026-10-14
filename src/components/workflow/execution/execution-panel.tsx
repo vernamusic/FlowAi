@@ -5,7 +5,9 @@ import {
   ChevronDown,
   ChevronUp,
   Circle,
+  Copy,
   Loader2,
+  RotateCcw,
   X,
 } from "lucide-react";
 
@@ -16,12 +18,30 @@ import { useWorkflowStore } from "@/store/workflow.store";
 export function ExecutionPanel() {
   const execution = useWorkflowStore((state) => state.execution);
   const workflow = useWorkflowStore((state) => state.workflow);
+  const retryWorkflow = useWorkflowStore((state) => state.retryWorkflow);
+  const executionHistory = useWorkflowStore((state) => state.executionHistory);
 
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  if (!execution || !workflow) {
+  if (!workflow) {
     return null;
+  }
+
+  if (!execution) {
+    return executionHistory.length > 0 ? (
+      <div className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-4 shadow-2xl">
+        <p className="text-xs font-semibold text-white">Recent executions</p>
+        <div className="mt-3 space-y-2">
+          {executionHistory.slice(0, 5).map((item) => (
+            <div key={item.id} className="flex items-center justify-between rounded-lg border border-zinc-900 bg-zinc-900/60 px-3 py-2 text-[11px]">
+              <span className={`capitalize ${item.status === "success" ? "text-emerald-400" : item.status === "error" ? "text-red-400" : "text-zinc-400"}`}>{item.mode === "dry-run" ? "Dry run · " : ""}{item.status}</span>
+              <span className="text-zinc-600">{item.duration ?? 0}ms · {new Date(item.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : null;
   }
 
   return (
@@ -33,7 +53,7 @@ export function ExecutionPanel() {
           <p className="text-sm font-semibold text-white">Workflow Execution</p>
 
           <p className="mt-1 text-[11px] capitalize text-zinc-600">
-            {execution.status}
+            {execution.mode === "dry-run" ? "dry run · " : ""}{execution.status} · {executionHistory.length} saved runs
           </p>
         </div>
 
@@ -42,6 +62,12 @@ export function ExecutionPanel() {
             <span className="text-[11px] text-zinc-600">
               {execution.duration}ms
             </span>
+          )}
+
+          {(execution.status === "error" || execution.status === "canceled") && (
+            <button type="button" onClick={retryWorkflow} className="inline-flex items-center gap-1 rounded-md border border-zinc-800 px-2 py-1 text-[10px] text-zinc-400 transition hover:bg-zinc-800 hover:text-white" title="Retry with the same mode">
+              <RotateCcw className="h-3 w-3" /> Retry
+            </button>
           )}
 
           <button
@@ -90,6 +116,10 @@ export function ExecutionPanel() {
                         <Circle className="h-4 w-4 text-zinc-700" />
                       )}
 
+                      {nodeExecution.status === "skipped" && (
+                        <Circle className="h-4 w-4 text-zinc-600" />
+                      )}
+
                       {nodeExecution.status === "running" && (
                         <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
                       )}
@@ -105,6 +135,7 @@ export function ExecutionPanel() {
                       <span className="text-xs text-zinc-300">
                         {node.data.label}
                       </span>
+                      {nodeExecution.status === "skipped" && <span className="text-[10px] text-zinc-600">Skipped</span>}
                     </div>
 
                     {expanded ? (
@@ -123,9 +154,7 @@ export function ExecutionPanel() {
                           Input
                         </p>
 
-                        <pre className="overflow-x-auto rounded-md bg-zinc-950 p-2 text-[10px] leading-5 text-zinc-500">
-                          {JSON.stringify(nodeExecution.input ?? {}, null, 2)}
-                        </pre>
+                        <div className="relative"><pre className="overflow-x-auto rounded-md bg-zinc-950 p-2 pr-8 text-[10px] leading-5 text-zinc-500">{JSON.stringify(nodeExecution.input ?? {}, null, 2)}</pre><CopyButton value={JSON.stringify(nodeExecution.input ?? {}, null, 2)} /></div>
                       </div>
 
                       {/* Output */}
@@ -135,9 +164,7 @@ export function ExecutionPanel() {
                           Output
                         </p>
 
-                        <pre className="overflow-x-auto rounded-md bg-zinc-950 p-2 text-[10px] leading-5 text-zinc-500">
-                          {JSON.stringify(nodeExecution.output ?? {}, null, 2)}
-                        </pre>
+                        <div className="relative"><pre className="overflow-x-auto rounded-md bg-zinc-950 p-2 pr-8 text-[10px] leading-5 text-zinc-500">{JSON.stringify(nodeExecution.output ?? {}, null, 2)}</pre><CopyButton value={JSON.stringify(nodeExecution.output ?? {}, null, 2)} /></div>
                       </div>
 
                       {/* Error */}
@@ -159,4 +186,8 @@ export function ExecutionPanel() {
       )}
     </div>
   );
+}
+
+function CopyButton({ value }: { value: string }) {
+  return <button type="button" onClick={() => void navigator.clipboard?.writeText(value)} aria-label="Copy details" className="absolute right-1 top-1 rounded p-1 text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-200"><Copy className="h-3 w-3" /></button>;
 }

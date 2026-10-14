@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, ChevronRight, Info, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, Info, X } from "lucide-react";
 
 import { useState } from "react";
 
@@ -96,7 +96,7 @@ export function ExecutionLogs() {
             execution.logs.map((log, index) => {
               const isExpanded = expandedLogId === log.id;
 
-              const hasDetails = Boolean(log.input || log.output || log.error);
+              const hasDetails = Boolean(log.input || log.output || log.details || log.error);
 
               const handleClick = () => {
                 /**
@@ -189,9 +189,7 @@ export function ExecutionLogs() {
                             Input
                           </p>
 
-                          <pre className="max-h-32 overflow-auto rounded-lg border border-zinc-900 bg-zinc-950 p-3 text-[10px] leading-5 text-zinc-500">
-                            {JSON.stringify(log.input, null, 2)}
-                          </pre>
+                          <div className="relative"><pre className="max-h-32 overflow-auto rounded-lg border border-zinc-900 bg-zinc-950 p-3 pr-8 text-[10px] leading-5 text-zinc-500">{JSON.stringify(log.input, null, 2)}</pre><CopyButton value={JSON.stringify(log.input, null, 2)} /></div>
                         </div>
                       )}
 
@@ -203,13 +201,18 @@ export function ExecutionLogs() {
                             Output
                           </p>
 
-                          <pre className="max-h-32 overflow-auto rounded-lg border border-zinc-900 bg-zinc-950 p-3 text-[10px] leading-5 text-zinc-500">
-                            {JSON.stringify(log.output, null, 2)}
-                          </pre>
+                          <div className="relative"><pre className="max-h-32 overflow-auto rounded-lg border border-zinc-900 bg-zinc-950 p-3 pr-8 text-[10px] leading-5 text-zinc-500">{JSON.stringify(log.output, null, 2)}</pre><CopyButton value={JSON.stringify(log.output, null, 2)} /></div>
                         </div>
                       )}
 
                       {/* Error */}
+
+                      {log.details && (
+                        <div className="mb-3">
+                          <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600">Request details</p>
+                          <div className="relative"><pre className="max-h-32 overflow-auto rounded-lg border border-zinc-900 bg-zinc-950 p-3 pr-8 text-[10px] leading-5 text-zinc-500">{JSON.stringify(log.details, null, 2)}</pre><CopyButton value={JSON.stringify(log.details, null, 2)} /></div>
+                        </div>
+                      )}
 
                       {log.error && (
                         <div>
@@ -232,4 +235,8 @@ export function ExecutionLogs() {
       )}
     </div>
   );
+}
+
+function CopyButton({ value }: { value: string }) {
+  return <button type="button" onClick={() => void navigator.clipboard?.writeText(value)} aria-label="Copy log details" className="absolute right-1 top-1 rounded p-1 text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-200"><Copy className="h-3 w-3" /></button>;
 }

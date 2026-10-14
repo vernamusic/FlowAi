@@ -24,6 +24,7 @@ interface HttpRequestConfig {
   token?: string;
   username?: string;
   password?: string;
+  signal?: AbortSignal;
 }
 interface HttpRequestOutput extends Record<string, unknown> {
   status: number;
@@ -66,6 +67,8 @@ export async function executeHttpRequest(
   }
 
   const controller = new AbortController();
+  const handleAbort = () => controller.abort();
+  config.signal?.addEventListener("abort", handleAbort, { once: true });
 
   const timeout = Math.min(Math.max(config.timeout ?? 10000, 1000), 120000);
 
@@ -203,5 +206,6 @@ export async function executeHttpRequest(
     throw error;
   } finally {
     clearTimeout(timeoutId);
+    config.signal?.removeEventListener("abort", handleAbort);
   }
 }

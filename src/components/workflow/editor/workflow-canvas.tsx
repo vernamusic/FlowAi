@@ -16,6 +16,7 @@ import {
 } from "@xyflow/react";
 
 import { useCallback, useEffect, useMemo } from "react";
+import { AlertCircle, MousePointer2 } from "lucide-react";
 
 import { ExecutionLogs } from "@/components/workflow/execution/execution-logs";
 import { ExecutionPanel } from "@/components/workflow/execution/execution-panel";
@@ -29,6 +30,7 @@ import {
 } from "@/lib/workflow/react-flow-adapter";
 
 import { useWorkflowStore } from "@/store/workflow.store";
+import { validateConnection } from "@/lib/workflow/validation";
 
 import type { NodeType } from "@/types/workflow";
 
@@ -39,6 +41,7 @@ const nodeTypes = {
 export function WorkflowCanvas() {
   const workflow = useWorkflowStore((state) => state.workflow);
   const execution = useWorkflowStore((state) => state.execution);
+  const editorIssues = useWorkflowStore((state) => state.editorIssues);
 
   const addNode = useWorkflowStore((state) => state.addNode);
   const addEdge = useWorkflowStore((state) => state.addEdge);
@@ -239,6 +242,20 @@ export function WorkflowCanvas() {
     [addEdge],
   );
 
+  const isValidConnection = useCallback(
+    (connection: Connection | Edge) => {
+      if (!workflow || !connection.source || !connection.target) return false;
+      return validateConnection(workflow, {
+        id: "connection-preview",
+        source: connection.source,
+        target: connection.target,
+        sourceHandle: connection.sourceHandle ?? undefined,
+        targetHandle: connection.targetHandle ?? undefined,
+      }).valid;
+    },
+    [workflow],
+  );
+
   /**
    * Select node
    */
@@ -269,6 +286,7 @@ export function WorkflowCanvas() {
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         onConnect={handleConnect}
+        isValidConnection={isValidConnection}
         fitView
         colorMode="dark"
       >
@@ -307,6 +325,32 @@ export function WorkflowCanvas() {
           zoomable
         />
       </ReactFlow>
+
+      {!workflow?.nodes.length && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-6">
+          <div className="max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950/95 p-6 text-center shadow-2xl backdrop-blur">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
+              <MousePointer2 className="h-5 w-5" />
+            </div>
+            <h2 className="mt-4 text-sm font-semibold text-white">Start with a trigger</h2>
+            <p className="mt-2 text-xs leading-5 text-zinc-500">Drag a Manual Trigger from the node library, then connect the steps you want to run.</p>
+          </div>
+        </div>
+      )}
+
+      {editorIssues.length > 0 && (
+        <div className="absolute right-3 top-3 z-20 max-w-sm rounded-xl border border-amber-500/30 bg-zinc-950/95 p-3 shadow-xl backdrop-blur">
+          <div className="flex gap-2">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+            <div>
+              <p className="text-xs font-medium text-amber-200">Workflow needs attention</p>
+              <ul className="mt-1 space-y-1 text-[11px] leading-4 text-zinc-400">
+                {editorIssues.slice(0, 3).map((issue, index) => <li key={`${issue.code}-${issue.nodeId ?? index}`}>{issue.message}</li>)}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="absolute bottom-3 left-1/2 z-20 flex w-[calc(100%-1.5rem)] max-w-[460px] -translate-x-1/2 flex-col gap-3 sm:bottom-4 sm:w-[460px]">
         <ExecutionLogs />

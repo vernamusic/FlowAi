@@ -7,6 +7,7 @@ import type {
 } from "@/types/workflow";
 import { createVariableContext } from "@/lib/workflow/variables/variable-context";
 import { executeHttpRequest } from "@/lib/workflow/execution/http-request";
+import { executeOpenAiPrompt } from "@/lib/workflow/execution/openai";
 import { resolveValue } from "@/lib/workflow/variables/variable-resolver";
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -87,6 +88,11 @@ export type ExecutionEvent =
       error: string;
     }
   | {
+      type: "node-skipped";
+      nodeId: string;
+      reason: string;
+    }
+  | {
       type: "workflow-completed";
       execution: WorkflowExecution;
     }
@@ -101,6 +107,7 @@ export type ExecutionEvent =
 async function executeNode(
   node: WorkflowNode,
   input: Record<string, unknown>,
+  options: { dryRun?: boolean; signal?: AbortSignal } = {},
 ): Promise<Record<string, unknown>> {
   void input;
 
@@ -122,15 +129,31 @@ async function executeNode(
       };
 
     case "ai-prompt":
-      return {
-        response: `AI response for: ${
-          typeof node.data.config.prompt === "string"
-            ? node.data.config.prompt
-            : "Empty prompt"
-        }`,
-      };
+      if (options.dryRun) {
+        return {
+          response: `[Dry run] ${typeof node.data.config.prompt === "string" ? node.data.config.prompt : "Sample AI response"}`,
+          model: typeof node.data.config.model === "string" ? node.data.config.model : "gpt-4o-mini",
+        };
+      }
+      return executeOpenAiPrompt({
+        prompt: typeof node.data.config.prompt === "string" ? node.data.config.prompt : "",
+        model: typeof node.data.config.model === "string" ? node.data.config.model : "gpt-4o-mini",
+        temperature: typeof node.data.config.temperature === "number" ? node.data.config.temperature : 0.7,
+        maxTokens: typeof node.data.config.maxTokens === "number" ? node.data.config.maxTokens : 1000,
+        instructions: typeof node.data.config.instructions === "string" ? node.data.config.instructions : undefined,
+        signal: options.signal,
+      });
 
     case "http-request": {
+      if (options.dryRun) {
+        return {
+          status: 200,
+          statusText: "OK (dry run)",
+          success: true,
+          headers: { "content-type": "application/json" },
+          data: { message: "Sample HTTP response" },
+        };
+      }
       const result = await executeHttpRequest({
         url:
           typeof node.data.config.url === "string"
@@ -182,6 +205,8 @@ async function executeNode(
           typeof node.data.config.password === "string"
             ? node.data.config.password
             : undefined,
+
+        signal: options.signal,
       });
 
       return result;
@@ -261,6 +286,7 @@ function getParents(workflow: Workflow, nodeId: string): WorkflowNode[] {
 export async function executeWorkflow(
   workflow: Workflow,
   onEvent?: (event: ExecutionEvent) => void,
+  options: { dryRun?: boolean; signal?: AbortSignal } = {},
 ): Promise<WorkflowExecution> {
   const executionId = crypto.randomUUID();
 
@@ -289,6 +315,7 @@ export async function executeWorkflow(
     nodes: executionNodes,
 
     logs: [],
+    mode: options.dryRun ? "dry-run" : "live",
   };
 
   /**
@@ -332,6 +359,24 @@ export async function executeWorkflow(
    * Failed nodes.
    */
   const failed = new Set<string>();
+  const skipped = new Set<string>();
+  let canceled = false;
+
+  const markSkipped = (node: WorkflowNode, reason: string) => {
+    if (completed.has(node.id) || failed.has(node.id) || skipped.has(node.id)) return;
+    skipped.add(node.id);
+    const nodeExecution = execution.nodes.find((item) => item.nodeId === node.id);
+    if (nodeExecution) {
+      nodeExecution.status = "skipped";
+      nodeExecution.completedAt = new Date().toISOString();
+    }
+    const log = createExecutionLog(executionId, "info", `${node.data.label} skipped`, node.id);
+    log.error = reason;
+    execution.logs.push(log);
+    onEvent?.({ type: "node-skipped", nodeId: node.id, reason });
+    onEvent?.({ type: "log", log });
+    for (const child of getChildren(workflow, node)) markSkipped(child, reason);
+  };
 
   /**
    * Initial queue.
@@ -344,6 +389,10 @@ export async function executeWorkflow(
    * Execution loop
    */
   while (queue.length > 0) {
+    if (options.signal?.aborted) {
+      canceled = true;
+      break;
+    }
     const node = queue.shift();
 
     if (!node) {
@@ -450,7 +499,12 @@ export async function executeWorkflow(
     /**
      * Simulate execution.
      */
-    await wait(700);
+    await wait(options.dryRun ? 120 : 700);
+
+    if (options.signal?.aborted) {
+      canceled = true;
+      break;
+    }
 
     try {
       /**
@@ -468,7 +522,7 @@ export async function executeWorkflow(
         },
       };
 
-      const output = await executeNode(executableNode, input);
+      const output = await executeNode(executableNode, input, options);
 
       const completedAt = new Date().toISOString();
 
@@ -515,6 +569,15 @@ export async function executeWorkflow(
 
       completedLog.duration = duration;
 
+      if (node.type === "http-request") {
+        completedLog.details = {
+          method: executableNode.data.config.method ?? "GET",
+          url: executableNode.data.config.url ?? "",
+          status: output.status ?? null,
+          success: output.success ?? false,
+        };
+      }
+
       execution.logs.push(completedLog);
 
       /**
@@ -541,7 +604,15 @@ export async function executeWorkflow(
         node.type === "condition" && typeof output.result === "boolean"
           ? output.result
           : undefined;
+      const allChildren = getChildren(workflow, node);
       const children = getChildren(workflow, node, conditionResult);
+      if (node.type === "condition") {
+        for (const child of allChildren) {
+          if (!children.some((selectedChild) => selectedChild.id === child.id)) {
+            markSkipped(child, `Condition evaluated ${conditionResult ? "true" : "false"}.`);
+          }
+        }
+      }
 
       for (const child of children) {
         if (!completed.has(child.id) && !failed.has(child.id)) {
@@ -549,6 +620,11 @@ export async function executeWorkflow(
         }
       }
     } catch (error) {
+      if (options.signal?.aborted) {
+        canceled = true;
+        nodeExecution.status = "skipped";
+        break;
+      }
       /**
        * Error message.
        */
@@ -628,9 +704,10 @@ export async function executeWorkflow(
   /**
    * Final execution state.
    */
-  execution.status = hasError ? "error" : "success";
+  execution.status = canceled ? "canceled" : hasError ? "error" : "success";
 
   execution.completedAt = completedAt;
+  if (canceled) execution.canceledAt = completedAt;
 
   execution.duration =
     new Date(completedAt).getTime() - new Date(startedAt).getTime();
@@ -641,7 +718,7 @@ export async function executeWorkflow(
   const workflowCompletedLog = createExecutionLog(
     executionId,
     hasError ? "error" : "success",
-    hasError ? "Workflow execution failed" : "Workflow execution completed",
+    canceled ? "Workflow execution canceled" : hasError ? "Workflow execution failed" : "Workflow execution completed",
   );
 
   workflowCompletedLog.duration = execution.duration;

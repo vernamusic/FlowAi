@@ -16,6 +16,16 @@ import {
   executeWorkflow,
   type ExecutionEvent,
 } from "@/lib/workflow/execution/execution-engine";
+import {
+  validateConnection,
+  validateWorkflow,
+  type ValidationResult,
+  type WorkflowValidationIssue,
+} from "@/lib/workflow/validation";
+import {
+  getExecutionHistory,
+  saveExecution,
+} from "@/lib/workflow/execution/execution-storage";
 interface WorkflowState {
   workflow: Workflow | null;
 
@@ -33,6 +43,7 @@ interface WorkflowState {
   deleteWorkflow: (workflowId: string) => void;
   updateWorkflowName: (name: string) => void;
   resetWorkflow: () => void;
+  replaceWorkflow: (workflow: Workflow) => void;
 
   /**
    * Node
@@ -47,6 +58,7 @@ interface WorkflowState {
     },
   ) => void;
   removeNode: (nodeId: string) => void;
+  duplicateNode: (nodeId: string) => void;
 
   /**
    * Node Data
@@ -69,8 +81,17 @@ interface WorkflowState {
   /**
    * Edge
    */
-  addEdge: (edge: WorkflowEdge) => void;
+  addEdge: (edge: WorkflowEdge) => ValidationResult;
   removeEdge: (edgeId: string) => void;
+
+  editorIssues: WorkflowValidationIssue[];
+  clearEditorIssues: () => void;
+  validateCurrentWorkflow: () => ValidationResult;
+
+  historyPast: Workflow[];
+  historyFuture: Workflow[];
+  undo: () => void;
+  redo: () => void;
 
   getAvailableVariables: (nodeId: string) => WorkflowVariable[];
 
@@ -78,7 +99,12 @@ interface WorkflowState {
 
   isExecutionPanelOpen: boolean;
   isExecutionLogsOpen: boolean;
-  runWorkflow: () => Promise<void>;
+  runWorkflow: (options?: { dryRun?: boolean }) => Promise<void>;
+  cancelWorkflow: () => void;
+  retryWorkflow: () => Promise<void>;
+  getExecutionReadiness: () => ValidationResult;
+  executionHistory: WorkflowExecution[];
+  activeExecutionController: AbortController | null;
 
   closeExecutionPanel: () => void;
   closeExecutionLogs: () => void;
@@ -88,10 +114,15 @@ interface WorkflowState {
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   workflow: null,
   execution: null,
+  executionHistory: [],
+  activeExecutionController: null,
   selectedNodeId: null,
 
   isExecutionPanelOpen: false,
   isExecutionLogsOpen: false,
+  editorIssues: [],
+  historyPast: [],
+  historyFuture: [],
 
   // --------------------------------------------------
   // Workflow
@@ -101,6 +132,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     set({
       workflow,
       selectedNodeId: null,
+      editorIssues: [],
+      historyPast: [],
+      historyFuture: [],
     }),
 
   loadWorkflow: (workflowId) => {
@@ -113,7 +147,11 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     set({
       workflow,
       execution: null,
+      executionHistory: getExecutionHistory(workflowId),
       selectedNodeId: null,
+      editorIssues: validateWorkflow(workflow).issues,
+      historyPast: [],
+      historyFuture: [],
     });
 
     return true;
@@ -135,6 +173,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         workflow: null,
         execution: null,
         selectedNodeId: null,
+        editorIssues: [],
+        historyPast: [],
+        historyFuture: [],
       });
     }
   },
@@ -151,14 +192,36 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
           name,
           updatedAt: new Date().toISOString(),
         },
+        historyPast: [...state.historyPast.slice(-49), state.workflow],
+        historyFuture: [],
       };
     }),
 
   resetWorkflow: () =>
     set({
       workflow: null,
+      execution: null,
       selectedNodeId: null,
+      editorIssues: [],
+      historyPast: [],
+      historyFuture: [],
     }),
+
+  replaceWorkflow: (workflow) =>
+    set((state) => ({
+      workflow: {
+        ...workflow,
+        id: state.workflow?.id ?? workflow.id,
+        updatedAt: new Date().toISOString(),
+      },
+      execution: null,
+      selectedNodeId: null,
+      editorIssues: validateWorkflow(workflow).issues,
+      historyPast: state.workflow
+        ? [...state.historyPast.slice(-49), state.workflow]
+        : [],
+      historyFuture: [],
+    })),
 
   // --------------------------------------------------
   // Node
@@ -176,6 +239,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
           nodes: [...state.workflow.nodes, node],
           updatedAt: new Date().toISOString(),
         },
+        historyPast: [...state.historyPast.slice(-49), state.workflow],
+        historyFuture: [],
       };
     }),
 
@@ -200,6 +265,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
           updatedAt: new Date().toISOString(),
         },
+        historyPast: [...state.historyPast.slice(-49), state.workflow],
+        historyFuture: [],
       };
     }),
 
@@ -224,6 +291,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
           updatedAt: new Date().toISOString(),
         },
+        historyPast: [...state.historyPast.slice(-49), state.workflow],
+        historyFuture: [],
       };
     }),
 
@@ -248,6 +317,27 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
         selectedNodeId:
           state.selectedNodeId === nodeId ? null : state.selectedNodeId,
+        historyPast: [...state.historyPast.slice(-49), state.workflow],
+        historyFuture: [],
+      };
+    }),
+
+  duplicateNode: (nodeId) =>
+    set((state) => {
+      if (!state.workflow) return state;
+      const node = state.workflow.nodes.find((item) => item.id === nodeId);
+      if (!node) return state;
+      const copy: WorkflowNode = {
+        ...node,
+        id: crypto.randomUUID(),
+        position: { x: node.position.x + 40, y: node.position.y + 40 },
+        data: { ...node.data, label: `${node.data.label} copy`, config: { ...node.data.config } },
+      };
+      return {
+        workflow: { ...state.workflow, nodes: [...state.workflow.nodes, copy], updatedAt: new Date().toISOString() },
+        selectedNodeId: copy.id,
+        historyPast: [...state.historyPast.slice(-49), state.workflow],
+        historyFuture: [],
       };
     }),
 
@@ -280,6 +370,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
           updatedAt: new Date().toISOString(),
         },
+        historyPast: [...state.historyPast.slice(-49), state.workflow],
+        historyFuture: [],
       };
     }),
 
@@ -316,6 +408,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
           updatedAt: new Date().toISOString(),
         },
+        historyPast: [...state.historyPast.slice(-49), state.workflow],
+        historyFuture: [],
       };
     }),
 
@@ -332,22 +426,22 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   // Edge
   // --------------------------------------------------
 
-  addEdge: (edge) =>
-    set((state) => {
-      if (!state.workflow) {
-        return state;
-      }
-
-      return {
-        workflow: {
-          ...state.workflow,
-
-          edges: [...state.workflow.edges, edge],
-
-          updatedAt: new Date().toISOString(),
-        },
-      };
-    }),
+  addEdge: (edge) => {
+    const workflow = get().workflow;
+    if (!workflow) return { valid: false, issues: [{ code: "no-workflow", message: "Open a workflow before connecting nodes." }] };
+    const result = validateConnection(workflow, edge);
+    if (!result.valid) {
+      set({ editorIssues: result.issues });
+      return result;
+    }
+    set((state) => ({
+      workflow: state.workflow ? { ...state.workflow, edges: [...state.workflow.edges, edge], updatedAt: new Date().toISOString() } : null,
+      editorIssues: [],
+      historyPast: state.workflow ? [...state.historyPast.slice(-49), state.workflow] : state.historyPast,
+      historyFuture: [],
+    }));
+    return result;
+  },
 
   removeEdge: (edgeId) =>
     set((state) => {
@@ -363,8 +457,29 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
           updatedAt: new Date().toISOString(),
         },
+        historyPast: [...state.historyPast.slice(-49), state.workflow],
+        historyFuture: [],
       };
     }),
+  clearEditorIssues: () => set({ editorIssues: [] }),
+  validateCurrentWorkflow: () => {
+    const workflow = get().workflow;
+    const result = workflow
+      ? validateWorkflow(workflow)
+      : { valid: false, issues: [{ code: "no-workflow", message: "No workflow is open." }] };
+    set({ editorIssues: result.issues });
+    return result;
+  },
+  undo: () => set((state) => {
+    const previous = state.historyPast.at(-1);
+    if (!previous || !state.workflow) return state;
+    return { workflow: previous, selectedNodeId: null, editorIssues: [], historyPast: state.historyPast.slice(0, -1), historyFuture: [state.workflow, ...state.historyFuture] };
+  }),
+  redo: () => set((state) => {
+    const next = state.historyFuture[0];
+    if (!next || !state.workflow) return state;
+    return { workflow: next, selectedNodeId: null, editorIssues: [], historyPast: [...state.historyPast, state.workflow], historyFuture: state.historyFuture.slice(1) };
+  }),
   // --------------------------------------------------
   // Variables
   // --------------------------------------------------
@@ -468,20 +583,33 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
     return variables;
   },
-  runWorkflow: async () => {
+  getExecutionReadiness: () => {
+    const workflow = get().workflow;
+    if (!workflow) return { valid: false, issues: [{ code: "no-workflow", message: "Open a workflow before running it." }] };
+    return validateWorkflow(workflow);
+  },
+  runWorkflow: async (options = {}) => {
     const workflow = get().workflow;
 
     if (!workflow) {
       return;
     }
 
+    const validation = validateWorkflow(workflow);
+    if (!validation.valid) {
+      set({ editorIssues: validation.issues });
+      return;
+    }
+
+    const controller = new AbortController();
     set({
       isExecutionPanelOpen: true,
       isExecutionLogsOpen: true,
       execution: null,
+      activeExecutionController: controller,
     });
 
-    await executeWorkflow(workflow, (event: ExecutionEvent) => {
+    const result = await executeWorkflow(workflow, (event: ExecutionEvent) => {
       switch (event.type) {
         case "workflow-started":
           set({
@@ -569,6 +697,15 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
           break;
 
+        case "node-skipped":
+          set((state) => state.execution ? {
+            execution: {
+              ...state.execution,
+              nodes: state.execution.nodes.map((node) => node.nodeId === event.nodeId ? { ...node, status: "skipped", error: event.reason } : node),
+            },
+          } : state);
+          break;
+
         case "workflow-completed":
           set({
             execution: event.execution,
@@ -593,7 +730,19 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
           break;
       }
-    });
+    }, options);
+    saveExecution(result);
+    set((state) => ({
+      execution: result,
+      executionHistory: [result, ...state.executionHistory.filter((item) => item.id !== result.id)].slice(0, 20),
+      activeExecutionController: null,
+    }));
+  },
+  cancelWorkflow: () => get().activeExecutionController?.abort(),
+  retryWorkflow: async () => {
+    const last = get().execution;
+    if (!last) return;
+    await get().runWorkflow({ dryRun: last.mode === "dry-run" });
   },
   // --------------------------------------------------
   // Execution UI

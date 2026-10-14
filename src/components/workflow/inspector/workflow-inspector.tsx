@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { Copy, Trash2 } from "lucide-react";
 
 import { useWorkflowStore } from "@/store/workflow.store";
 
@@ -20,6 +20,7 @@ export function WorkflowInspector({
 
   const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId);
   const removeNode = useWorkflowStore((state) => state.removeNode);
+  const duplicateNode = useWorkflowStore((state) => state.duplicateNode);
 
   const handleDeleteNode = () => {
     if (!selectedNodeId) {
@@ -79,15 +80,14 @@ export function WorkflowInspector({
             </h2>
           </div>
 
-          <button
-            type="button"
-            onClick={handleDeleteNode}
-            aria-label={`Delete ${node.data.label}`}
-            title="Delete node"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 transition hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          <div className="flex shrink-0 gap-1">
+            <button type="button" onClick={() => duplicateNode(node.id)} aria-label={`Duplicate ${node.data.label}`} title="Duplicate node (Ctrl/⌘ + D)" className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
+              <Copy className="h-4 w-4" />
+            </button>
+            <button type="button" onClick={handleDeleteNode} aria-label={`Delete ${node.data.label}`} title="Delete node" className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 transition hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400">
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         <p className="mt-1 text-xs leading-5 text-zinc-500">

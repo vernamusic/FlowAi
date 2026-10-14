@@ -211,8 +211,9 @@ export function Sidebar() {
 
           {/* Settings */}
           <div className="shrink-0 border-t border-zinc-800 p-3">
-            <button
-              type="button"
+            <Link
+              href="/settings"
+              onClick={() => setMobileOpen(false)}
               className="
                 flex h-10 w-full
                 items-center
@@ -258,7 +259,7 @@ export function Sidebar() {
               >
                 Settings
               </span>
-            </button>
+            </Link>
           </div>
         </div>
       </aside>

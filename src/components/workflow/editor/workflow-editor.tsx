@@ -20,12 +20,40 @@ export function WorkflowEditor({ workflowId }: WorkflowEditorProps) {
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
   const loadWorkflow = useWorkflowStore((state) => state.loadWorkflow);
   const resetWorkflow = useWorkflowStore((state) => state.resetWorkflow);
+  const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId);
+  const removeNode = useWorkflowStore((state) => state.removeNode);
+  const duplicateNode = useWorkflowStore((state) => state.duplicateNode);
+  const undo = useWorkflowStore((state) => state.undo);
+  const redo = useWorkflowStore((state) => state.redo);
 
   useEffect(() => {
     if (!loadWorkflow(workflowId)) {
       resetWorkflow();
     }
   }, [loadWorkflow, resetWorkflow, workflowId]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      const modifier = event.ctrlKey || event.metaKey;
+      if (modifier && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        if (event.shiftKey) redo(); else undo();
+      } else if (modifier && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        redo();
+      } else if (modifier && event.key.toLowerCase() === "d" && selectedNodeId) {
+        event.preventDefault();
+        duplicateNode(selectedNodeId);
+      } else if ((event.key === "Delete" || event.key === "Backspace") && selectedNodeId) {
+        event.preventDefault();
+        removeNode(selectedNodeId);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [duplicateNode, redo, removeNode, selectedNodeId, undo]);
 
   return (
     <ReactFlowProvider>
