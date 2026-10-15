@@ -1,40 +1,34 @@
-import { parseVariable, parseVariables } from "./variable-parser";
+import { parseVariable, parseVariables, type ParsedVariable } from "./variable-parser";
 
 import type { VariableContext, VariableValue } from "./variable-context";
 
 /**
- * Resolve a nested value from an object.
+ * Resolve a nested value using the parsed segments.
  *
- * Example:
- *
- * context = {
- *   manual_trigger: {
- *     user: {
- *       name: "Amir"
- *     }
- *   }
- * }
- *
- * path = ["user", "name"]
- *
- * result = "Amir"
+ * Supports property names, array indexes (including negative ones),
+ * bracket notation, the `length` of arrays and strings, and optional
+ * segments that stop at the first missing value.
  */
-function getValueByPath(value: VariableValue, path: string[]): VariableValue {
+function getValueBySegments(
+  value: VariableValue,
+  segments: ParsedVariable["segments"],
+): VariableValue {
   let current: unknown = value;
 
-  for (const key of path) {
+  for (const segment of segments) {
     if (current === null || current === undefined) {
       return undefined;
     }
 
-    if (typeof current !== "object") {
-      return undefined;
-    }
+    if (segment.kind === "index") {
+      if (!Array.isArray(current)) {
+        return undefined;
+      }
 
-    if (Array.isArray(current)) {
-      const index = Number(key);
+      const index =
+        segment.index < 0 ? current.length + segment.index : segment.index;
 
-      if (Number.isNaN(index) || index < 0 || index >= current.length) {
+      if (index < 0 || index >= current.length) {
         return undefined;
       }
 
@@ -43,20 +37,84 @@ function getValueByPath(value: VariableValue, path: string[]): VariableValue {
       continue;
     }
 
+    /**
+     * `.length` is a common request for lists and strings.
+     */
+    if (segment.name === "length") {
+      if (Array.isArray(current)) {
+        current = current.length;
+
+        continue;
+      }
+
+      if (typeof current === "string") {
+        current = current.length;
+
+        continue;
+      }
+
+      return undefined;
+    }
+
+    if (typeof current !== "object" || Array.isArray(current)) {
+      /**
+       * A non optional segment on a primitive is a real mismatch, but
+       * returning undefined keeps templates forgiving.
+       */
+      return undefined;
+    }
+
     const object = current as Record<string, unknown>;
 
-    current = object[key];
+    if (segment.optional && !(segment.name in object)) {
+      return undefined;
+    }
+
+    current = object[segment.name];
   }
 
   return current as VariableValue;
 }
 
 /**
- * Resolve a single variable.
+ * Convert a fallback literal into a value.
+ *
+ * `"text"` stays text, `12` becomes a number, and `true` a boolean.
+ */
+function parseFallback(raw: string): VariableValue {
+  const trimmed = raw.trim();
+
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length > 1) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length > 1)
+  ) {
+    return trimmed.slice(1, -1);
+  }
+
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  if (trimmed === "null") return null;
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+
+  return trimmed;
+}
+
+/**
+ * Whether a fallback should be used.
+ *
+ * Empty strings count, because a blank value is rarely what a template
+ * author wants to send onward.
+ */
+function isEmptyValue(value: VariableValue): boolean {
+  return value === undefined || value === null || value === "";
+}
+
+/**
+ * Resolve a single variable expression.
  *
  * Example:
  *
- * {{manual_trigger.email}}
+ * resolveVariable("{{manual_trigger.email}}", context)
  *
  * → "amir@example.com"
  */
@@ -73,15 +131,25 @@ export function resolveVariable(
   const root = context[parsed.key];
 
   if (root === undefined) {
-    return undefined;
+    return applyFallback(parsed, undefined);
   }
 
-  return getValueByPath(root, parsed.path);
+  return applyFallback(parsed, getValueBySegments(root, parsed.segments));
+}
+
+function applyFallback(
+  parsed: ParsedVariable,
+  value: VariableValue,
+): VariableValue {
+  if (parsed.fallback === undefined || !isEmptyValue(value)) {
+    return value;
+  }
+
+  return parseFallback(parsed.fallback);
 }
 
 /**
- * Convert any variable value
- * to a string.
+ * Convert any variable value to a string.
  */
 function stringifyValue(value: VariableValue): string {
   if (value === null || value === undefined) {
@@ -100,8 +168,7 @@ function stringifyValue(value: VariableValue): string {
 }
 
 /**
- * Resolve all variables inside
- * a text template.
+ * Resolve all variables inside a text template.
  *
  * Example:
  *
@@ -126,22 +193,30 @@ export function resolveTemplate(
   for (const variable of variables) {
     const value = resolveVariable(variable.raw, context);
 
-    result = result.replace(variable.raw, stringifyValue(value));
+    result = replaceOnce(result, variable.raw, stringifyValue(value));
   }
 
   return result;
 }
 
 /**
+ * Replace the first occurrence only, so the same expression used twice
+ * keeps both values.
+ */
+function replaceOnce(text: string, search: string, replacement: string) {
+  const index = text.indexOf(search);
+
+  if (index === -1) {
+    return text;
+  }
+
+  return text.slice(0, index) + replacement + text.slice(index + search.length);
+}
+
+/**
  * Resolve a value recursively.
  *
- * Supports:
- *
- * string
- * number
- * boolean
- * object
- * array
+ * Supports strings, numbers, booleans, objects, and arrays.
  */
 export function resolveValue(
   value: unknown,

@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 
 import {
-  findUnresolvedReferences,
   readAiConfig,
 } from "@/lib/workflow/execution/ai/config";
 import type {
@@ -11,13 +10,12 @@ import type {
   AiResponseFormat,
   AiRunResult,
 } from "@/lib/workflow/execution/ai/types";
-import { createVariableContext } from "@/lib/workflow/variables/variable-context";
-import type { VariableContext } from "@/lib/workflow/variables/variable-context";
-import { resolveValue } from "@/lib/workflow/variables/variable-resolver";
+import {
+  useResolvedVariables,
+} from "@/lib/workflow/variables/use-resolved-variables";
 import { useWorkflowStore } from "@/store/workflow.store";
 import type {
   NodeExecution,
-  Workflow,
   WorkflowExecution,
 } from "@/types/workflow";
 
@@ -53,10 +51,9 @@ export function AIPromptInspector({ nodeId }: AIPromptInspectorProps) {
    * Variables resolve against the newest successful runs, so the preview
    * and the test run send what the workflow would really send.
    */
-  const variableContext = useMemo(
-    () => createPreviewContext(workflow, [execution, ...executionHistory]),
-    [execution, executionHistory, workflow],
-  );
+  const resolvedVariables = useResolvedVariables(nodeId);
+
+  const { unresolved } = useResolvedVariables(nodeId);
 
   const resolvedConfig = useMemo(() => {
     const nodeConfig = node?.data.config;
@@ -65,10 +62,10 @@ export function AIPromptInspector({ nodeId }: AIPromptInspectorProps) {
       return null;
     }
 
-    const resolved = resolveValue(nodeConfig, variableContext);
+    const resolved = resolvedVariables.resolveConfig(nodeConfig);
 
-    return readAiConfig(resolved as Record<string, unknown>);
-  }, [node?.data.config, variableContext]);
+    return readAiConfig(resolved);
+  }, [node?.data.config, resolvedVariables]);
 
   if (!node || !resolvedConfig) return null;
 
@@ -77,9 +74,8 @@ export function AIPromptInspector({ nodeId }: AIPromptInspectorProps) {
   const variables = getAvailableVariables(nodeId);
   const resolvedPrompt = resolvedConfig.prompt;
   const resolvedInstructions = resolvedConfig.instructions ?? "";
-  const unresolvedReferences = findUnresolvedReferences(
+  const unresolvedReferences = unresolved(
     `${resolvedPrompt}\n${resolvedInstructions}`,
-    variables.map((variable) => variable.key),
   );
 
   const updateConfig = (patch: Record<string, unknown>) => {
@@ -230,35 +226,6 @@ export function AIPromptInspector({ nodeId }: AIPromptInspectorProps) {
       />
     </div>
   );
-}
-
-/**
- * Build the variable context from every recorded successful node
- * output, newest run first.
- */
-function createPreviewContext(
-  workflow: Workflow | null,
-  runs: (WorkflowExecution | null)[],
-): VariableContext {
-  if (!workflow) {
-    return {};
-  }
-
-  const outputs = new Map<string, Record<string, unknown>>();
-
-  for (const run of runs) {
-    if (!run) {
-      continue;
-    }
-
-    for (const nodeExecution of run.nodes) {
-      if (nodeExecution.status === "success" && nodeExecution.output) {
-        outputs.set(nodeExecution.nodeId, nodeExecution.output);
-      }
-    }
-  }
-
-  return createVariableContext(workflow.nodes, outputs);
 }
 
 function findLastNodeExecution(

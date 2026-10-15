@@ -1,8 +1,10 @@
 "use client";
 
 import { Copy, Trash2 } from "lucide-react";
+import { useState } from "react";
 
 import { useWorkflowStore } from "@/store/workflow.store";
+import { VariablesPanel } from "@/components/workflow/variables/variables-panel";
 
 import { AIPromptInspector } from "./ai-prompt-inspector";
 import { ManualTriggerInspector } from "./manual-trigger-inspector";
@@ -28,6 +30,8 @@ export function WorkflowInspector({
   const removeNode = useWorkflowStore((state) => state.removeNode);
   const duplicateNode = useWorkflowStore((state) => state.duplicateNode);
 
+  const [panel, setPanel] = useState<"inspector" | "variables">("inspector");
+
   const handleDeleteNode = () => {
     if (!selectedNodeId) {
       return;
@@ -42,36 +46,48 @@ export function WorkflowInspector({
     }
   };
 
-  if (!selectedNodeId || !workflow) {
-    return (
-      <aside
-        className={`w-80 shrink-0 border-l border-zinc-800 bg-zinc-950 ${className}`}
-      >
-        <div className="flex h-full items-center justify-center px-6 text-center">
+  const node = workflow?.nodes.find((item) => item.id === selectedNodeId);
+
+  return (
+    <aside
+      className={`flex h-full w-80 shrink-0 flex-col border-l border-zinc-800 bg-zinc-950 ${className}`}
+    >
+      {/* Panel switcher */}
+
+      <div className="shrink-0 border-b border-zinc-800 p-2">
+        <div className="flex rounded-lg border border-zinc-800 bg-zinc-900/60 p-0.5">
+          {(["inspector", "variables"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setPanel(item)}
+              aria-pressed={panel === item}
+              className={`flex-1 rounded-md px-2 py-1.5 text-[11px] capitalize transition ${
+                panel === item
+                  ? "bg-zinc-800 text-zinc-200"
+                  : "text-zinc-600 hover:text-zinc-300"
+              }`}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {panel === "variables" ? (
+        <VariablesPanel />
+      ) : !node ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
           <div>
-            <p className="text-sm font-medium text-zinc-400">
-              No node selected
-            </p>
+            <p className="text-sm font-medium text-zinc-400">No node selected</p>
 
             <p className="mt-2 text-xs leading-5 text-zinc-600">
               Select a node from the canvas to view its configuration.
             </p>
           </div>
         </div>
-      </aside>
-    );
-  }
-
-  const node = workflow.nodes.find((item) => item.id === selectedNodeId);
-
-  if (!node) {
-    return null;
-  }
-
-  return (
-    <aside
-      className={`flex h-full w-80 shrink-0 flex-col border-l border-zinc-800 bg-zinc-950 ${className}`}
-    >
+      ) : (
+        <>
       {/* Header */}
 
       <div className="border-b border-zinc-800 px-5 py-4">
@@ -154,7 +170,9 @@ export function WorkflowInspector({
             Configuration for this node is coming soon.
           </p>
         )}
-      </div>
+          </div>
+        </>
+      )}
     </aside>
   );
 }

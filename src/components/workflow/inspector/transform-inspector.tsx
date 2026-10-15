@@ -2,6 +2,7 @@
 
 import { useWorkflowStore } from "@/store/workflow.store";
 import { VariableInput } from "../variables/variable-input";
+import { ResolvedPreview } from "../variables/resolved-preview";
 
 import {
   TRANSFORM_VALUE_TYPES,
@@ -81,6 +82,8 @@ export function TransformInspector({ nodeId }: TransformInspectorProps) {
             placeholder="Hello {{manual_trigger.name}}"
             rows={4}
           />
+
+          <ResolvedPreview nodeId={nodeId} value={config.value} />
         </div>
 
         <div>
@@ -113,16 +116,16 @@ export function TransformInspector({ nodeId }: TransformInspectorProps) {
 
       <section className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
         <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">
-          Preview
+          Output
         </p>
+
         <p className="mt-2 break-words text-xs leading-5 text-zinc-300">
-          {config.value.trim() || "Nothing to preview yet."}
+          <code className="text-zinc-400">{`{{${config.name || "result"}}}`}</code>
         </p>
-        {config.value.trim() && (
-          <p className="mt-2 text-[10px] leading-4 text-zinc-600">
-            Converted to {config.valueType} when the node runs.
-          </p>
-        )}
+
+        <p className="mt-2 text-[10px] leading-4 text-zinc-600">
+          Converted to {config.valueType} when the node runs.
+        </p>
       </section>
     </div>
   );

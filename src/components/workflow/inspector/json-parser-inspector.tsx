@@ -2,6 +2,7 @@
 
 import { useWorkflowStore } from "@/store/workflow.store";
 import { VariableInput } from "../variables/variable-input";
+import { ResolvedPreview } from "../variables/resolved-preview";
 
 import {
   getByPath,
@@ -71,6 +72,12 @@ export function JsonParserInspector({ nodeId }: JsonParserInspectorProps) {
             onChange={(value) => updateConfig({ input: value })}
             placeholder="{{http_request.data}}"
             rows={5}
+          />
+
+          <ResolvedPreview
+            nodeId={nodeId}
+            value={config.input}
+            format="json"
           />
 
           <p className="mt-2 text-[10px] leading-4 text-zinc-600">

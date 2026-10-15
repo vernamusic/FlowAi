@@ -1,5 +1,8 @@
 import { DEFAULT_PROVIDER_ID, getAiProvider, getDefaultModel } from "./providers";
+import { findUnresolvedReferences, collectReferences } from "@/lib/workflow/variables/variable-audit";
 import type { AiPromptConfig, AiResponseFormat } from "./types";
+
+export { findUnresolvedReferences };
 
 export const DEFAULT_AI_TEMPERATURE = 0.7;
 export const DEFAULT_AI_MAX_TOKENS = 1000;
@@ -62,30 +65,6 @@ function clampNumber(
   return Math.min(Math.max(parsed, min), max);
 }
 
-/**
- * Every `{{ variable }}` reference found in a template.
- */
 export function collectVariableReferences(text: string): string[] {
-  const matches = text.match(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g) ?? [];
-
-  return matches.map((match) =>
-    match.replace(/^\{\{/, "").replace(/\}\}$/, "").trim(),
-  );
-}
-
-/**
- * References that do not match any variable available upstream.
- *
- * Templates ship with placeholder names such as `{{content}}`, so this is
- * also what tells the user which values still need to be wired up.
- */
-export function findUnresolvedReferences(
-  text: string,
-  availableKeys: string[],
-): string[] {
-  const available = new Set(availableKeys);
-
-  return Array.from(new Set(collectVariableReferences(text))).filter(
-    (reference) => !available.has(reference),
-  );
+  return collectReferences(text);
 }

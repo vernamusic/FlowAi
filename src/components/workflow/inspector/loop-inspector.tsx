@@ -4,6 +4,7 @@ import { Repeat } from "lucide-react";
 
 import { useWorkflowStore } from "@/store/workflow.store";
 import { VariableInput } from "../variables/variable-input";
+import { ResolvedPreview } from "../variables/resolved-preview";
 
 import {
   MAX_ITERATIONS,
@@ -71,6 +72,12 @@ export function LoopInspector({ nodeId }: LoopInspectorProps) {
             onChange={(value) => updateConfig({ items: value })}
             placeholder="{{json_parser.data}} or [1, 2, 3]"
             rows={4}
+          />
+
+          <ResolvedPreview
+            nodeId={nodeId}
+            value={config.items}
+            label="Resolved items"
           />
 
           <p className="mt-2 text-[10px] leading-4 text-zinc-600">

@@ -4,6 +4,7 @@ import { Bell } from "lucide-react";
 
 import { useWorkflowStore } from "@/store/workflow.store";
 import { VariableInput } from "../variables/variable-input";
+import { ResolvedPreview } from "../variables/resolved-preview";
 
 import {
   OUTPUT_CHANNELS,
@@ -58,6 +59,8 @@ export function OutputInspector({ nodeId }: OutputInspectorProps) {
             placeholder="Order {{webhook_trigger.body.orderId}} needs a reply"
             rows={4}
           />
+
+          <ResolvedPreview nodeId={nodeId} value={config.message} />
         </div>
 
         <div>

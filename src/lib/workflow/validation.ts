@@ -2,6 +2,7 @@ import type { NodeType, Workflow, WorkflowEdge, WorkflowNode } from "@/types/wor
 import { isTriggerNode } from "@/types/workflow";
 import { getAiProvider, normalizeBaseUrl } from "./execution/ai/providers";
 import { parseJsonSchema } from "./execution/ai/response-format";
+import { auditWorkflowVariables } from "./variables/variable-audit";
 import { MAX_DELAY_MS, MIN_DELAY_MS } from "./execution/nodes/delay";
 
 export interface WorkflowValidationIssue {
@@ -192,6 +193,20 @@ export function validateWorkflow(workflow: Workflow): ValidationResult {
   if (triggers.length !== 1) issues.push({ code: "trigger-count", message: "A workflow needs exactly one trigger, such as Manual Trigger or Webhook Trigger." });
   for (const node of workflow.nodes) {
     issues.push(...validateNodeConfig(node));
+    /**
+     * Variables are checked per node so the issue points at the node the
+     * user has to fix.
+     */
+    for (const variableIssue of auditWorkflowVariables(workflow)) {
+      if (variableIssue.nodeId === node.id) {
+        issues.push({
+          code: variableIssue.code,
+          nodeId: variableIssue.nodeId,
+          message: variableIssue.message,
+        });
+      }
+    }
+
     if (node.type === "condition") {
       const branches = workflow.edges.filter((edge) => edge.source === node.id);
       if (!branches.some((edge) => edge.sourceHandle === "true") || !branches.some((edge) => edge.sourceHandle === "false")) {
