@@ -192,6 +192,11 @@ export type ExecutionEvent =
       accumulated: string;
     }
   | {
+      type: "node-skipped";
+      nodeId: string;
+      reason: string;
+    }
+  | {
       type: "workflow-completed";
       execution: WorkflowExecution;
     }

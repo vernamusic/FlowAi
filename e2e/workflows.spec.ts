@@ -1,0 +1,366 @@
+import { expect, test, type Page } from "@playwright/test";
+
+/**
+ * The workflows users touch most: creating, editing, saving, importing,
+ * exporting, and resetting. Everything runs against a real browser with
+ * real local storage.
+ */
+
+const storageKey = "flowai:workflows";
+
+async function openWorkflowsPage(page: Page) {
+  await page.goto("/workflows");
+}
+
+async function createWorkflow(page: Page) {
+  await openWorkflowsPage(page);
+
+  /**
+   * The empty state repeats the create button, so the first one is used.
+   */
+  await page.getByRole("button", { name: /new workflow/i }).first().click();
+  await expect(page).toHaveURL(/\/workflows\/[0-9a-f-]{36}$/);
+  await dismissTour(page);
+}
+
+/**
+ * The first run shows a modal tour that covers the editor, so anything
+ * driving the canvas has to dismiss it first.
+ */
+async function dismissTour(page: Page) {
+  const dialog = page.getByRole("dialog", { name: "Product tour" });
+  const skip = page.getByRole("button", { name: /^Skip the tour$/ });
+
+  /**
+   * The tour opens a tick after the editor loads.
+   */
+  await dialog
+    .waitFor({ state: "visible", timeout: 3000 })
+    .catch(() => undefined);
+
+  if (await skip.isVisible().catch(() => false)) {
+    await skip.click();
+    await expect(dialog).toBeHidden();
+  }
+}
+
+async function useTemplate(page: Page) {
+  await page.goto("/templates");
+  await page.getByRole("button", { name: /use this template/i }).first().click();
+  await expect(page).toHaveURL(/\/workflows\/[0-9a-f-]{36}$/);
+  await dismissTour(page);
+}
+
+test.beforeEach(async ({ page }) => {
+  /**
+   * Cleared once per test, not on every navigation, so a reload keeps
+   * whatever the test saved.
+   */
+  await page.goto("/");
+  await page.evaluate(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+});
+
+test.describe("creating", () => {
+  test("creates an empty workflow and opens the editor", async ({ page }) => {
+    await createWorkflow(page);
+
+    await expect(page.getByRole("button", { name: /inspector/i }).first()).toBeVisible();
+    await expect(page.getByText("Empty canvas")).toBeVisible();
+  });
+
+  test("adds a node by clicking it in the library", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+
+    await expect(page.getByText("No node selected")).toBeHidden();
+    await expect(page.getByRole("heading", { name: "Manual Trigger" })).toBeVisible();
+  });
+
+  test("shows the tour on a first run", async ({ page }) => {
+    await page.goto("/workflows");
+    await page.getByRole("button", { name: /new workflow/i }).first().click();
+
+    await expect(page.getByRole("dialog", { name: "Product tour" })).toBeVisible();
+    await expect(page.getByText("Welcome to FlowAI")).toBeVisible();
+
+    await page.getByRole("button", { name: /^Skip the tour$/ }).click();
+    await expect(page.getByRole("dialog", { name: "Product tour" })).toBeHidden();
+  });
+
+  test("does not show the tour again once it is dismissed", async ({ page }) => {
+    await page.goto("/workflows");
+    await page.getByRole("button", { name: /new workflow/i }).first().click();
+    await page.getByRole("button", { name: /^Skip the tour$/ }).click();
+
+    await page.reload();
+
+    await expect(page.getByRole("dialog", { name: "Product tour" })).toBeHidden();
+  });
+
+  test("starts from a template", async ({ page }) => {
+    await openWorkflowsPage(page);
+    await page.getByRole("button", { name: /use this template/i }).first().click();
+
+    await expect(page).toHaveURL(/\/workflows\/[0-9a-f-]{36}$/);
+    await expect(page.getByText("Empty canvas")).toBeHidden();
+  });
+});
+
+test.describe("saving", () => {
+  test("keeps a workflow across a reload", async ({ page }) => {
+    await createWorkflow(page);
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+
+    const url = page.url();
+    await page.reload();
+
+    expect(page.url()).toBe(url);
+
+    /**
+     * The node survives, while the selection is session state and is
+     * expected to reset.
+     */
+    await expect(page.locator(".react-flow__node")).toHaveCount(1);
+    await expect(page.getByText("No node selected")).toBeVisible();
+
+    await openWorkflowsPage(page);
+    await expect(page.getByText("1 node")).toBeVisible();
+  });
+
+  test("lists the saved workflow on the workflows page", async ({ page }) => {
+    await createWorkflow(page);
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+
+    await openWorkflowsPage(page);
+
+    await expect(page.getByRole("heading", { name: "Untitled Workflow" })).toBeVisible();
+  });
+
+  test("saves automatically while editing", async ({ page }) => {
+    await createWorkflow(page);
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+
+    await openWorkflowsPage(page);
+
+    await expect(page.getByRole("heading", { name: "Untitled Workflow" })).toBeVisible();
+    await expect(page.getByText("1 node")).toBeVisible();
+  });
+});
+
+test.describe("running", () => {
+  test("dry runs a workflow built from a template", async ({ page }) => {
+    await useTemplate(page);
+
+    await page.getByRole("button", { name: "Dry run workflow" }).click();
+
+    await expect(page.getByText(/dry run/)).toBeVisible();
+    await expect(page.getByText("Workflow Execution").first()).toBeVisible();
+  });
+
+  test("cannot run a workflow that is missing a trigger", async ({ page }) => {
+    await createWorkflow(page);
+
+    await expect(page.getByRole("button", { name: "Run Workflow", exact: true })).toBeDisabled();
+  });
+});
+
+test.describe("exporting", () => {
+  test("downloads the workflow as json", async ({ page }) => {
+    await createWorkflow(page);
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export workflow" }).click();
+    const download = await downloadPromise;
+
+    expect(download.suggestedFilename()).toBe("Untitled-Workflow.json");
+
+    const stream = await download.createReadStream();
+    const chunks: Buffer[] = [];
+
+    for await (const chunk of stream) {
+      chunks.push(Buffer.from(chunk));
+    }
+
+    const exported = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+
+    expect(exported.name).toBe("Untitled Workflow");
+    expect(exported.nodes).toHaveLength(1);
+  });
+});
+
+test.describe("importing", () => {
+  const exportedWorkflow = {
+    id: "imported-1",
+    name: "Imported workflow",
+    description: "",
+    status: "draft",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    nodes: [
+      {
+        id: "n1",
+        type: "manual-trigger",
+        position: { x: 0, y: 0 },
+        data: {
+          label: "Manual Trigger",
+          description: "Start workflow manually",
+          category: "trigger",
+          config: {},
+        },
+      },
+    ],
+    edges: [],
+  };
+
+  test("imports a valid workflow", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "flow.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(exportedWorkflow)),
+    });
+
+    /**
+     * The name lives in the header input rather than a heading.
+     */
+    await expect(page.locator("input").first()).toHaveValue("Imported workflow");
+  });
+
+  test("shows an error for malformed json", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "broken.json",
+      mimeType: "application/json",
+      buffer: Buffer.from("{ this is not json"),
+    });
+
+    await expect(page.getByText(/Expected property name|JSON/i).first()).toBeVisible();
+    await expect(page.locator("input").first()).toHaveValue("Untitled Workflow");
+  });
+
+  test("shows an error for json that is not a workflow", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "wrong.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify({ hello: "world" })),
+    });
+
+    await expect(page.getByText(/not a valid FlowAI workflow/i)).toBeVisible();
+    await expect(page.locator("input").first()).toHaveValue("Untitled Workflow");
+  });
+});
+
+test.describe("resetting", () => {
+  test("clears every stored workflow", async ({ page }) => {
+    await createWorkflow(page);
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+
+    await page.goto("/settings");
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: /reset|delete/i }).click();
+
+    await openWorkflowsPage(page);
+
+    await expect(page.getByText("No workflows yet")).toBeVisible();
+    await expect(page.getByText(storageKey)).toBeHidden();
+  });
+
+  test("keeps the data when the confirmation is declined", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.goto("/settings");
+    page.once("dialog", (dialog) => dialog.dismiss());
+    await page.getByRole("button", { name: /reset|delete/i }).click();
+
+    await openWorkflowsPage(page);
+
+    await expect(page.getByRole("heading", { name: "Untitled Workflow" })).toBeVisible();
+  });
+});
+
+test.describe("corrupted storage", () => {
+  /**
+   * Corruption is written through `evaluate` rather than an init script,
+   * so it happens once instead of on every navigation.
+   */
+  async function corrupt(page: Page, value: string) {
+    await openWorkflowsPage(page);
+    await page.evaluate((raw) => window.localStorage.setItem("flowai:workflows", raw), value);
+    await page.reload();
+  }
+
+  test("recovers from malformed local storage", async ({ page }) => {
+    await corrupt(page, "{ this is broken");
+
+    await expect(page.getByText("No workflows yet")).toBeVisible();
+
+    await page.goto("/settings");
+    await expect(page.getByText(/repaired|recovered|recover/i)).toBeVisible();
+  });
+
+  test("recovers from a truncated workflow entry", async ({ page }) => {
+    await corrupt(
+      page,
+      JSON.stringify({
+        version: 2,
+        savedAt: new Date().toISOString(),
+        workflows: [{ id: "broken" }, null, "nope"],
+      }),
+    );
+
+    await expect(page.getByText("No workflows yet")).toBeVisible();
+  });
+
+  test("recovers from a legacy bare array", async ({ page }) => {
+    await corrupt(
+      page,
+      JSON.stringify([
+        {
+          id: "legacy-1",
+          name: "Legacy workflow",
+          description: "",
+          status: "draft",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          nodes: [],
+          edges: [],
+        },
+      ]),
+    );
+
+    await expect(page.getByRole("heading", { name: "Legacy workflow" })).toBeVisible();
+  });
+
+  test("keeps working after corrupted data is replaced", async ({ page }) => {
+    await corrupt(page, "[[[");
+
+    await page.getByRole("button", { name: /new workflow/i }).first().click();
+    await expect(page).toHaveURL(/\/workflows\/[0-9a-f-]{36}$/);
+
+    await openWorkflowsPage(page);
+
+    await expect(page.getByRole("heading", { name: "Untitled Workflow" })).toBeVisible();
+  });
+});
+
+test.describe("variables panel", () => {
+  test("lists the variables a workflow exposes", async ({ page }) => {
+    await useTemplate(page);
+
+    await page.getByRole("button", { name: /variables/i }).first().click();
+
+    await expect(page.getByText("Workflow Variables")).toBeVisible();
+    await expect(page.getByText(/outputs · .* references/)).toBeVisible();
+  });
+});

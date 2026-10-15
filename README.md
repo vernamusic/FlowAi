@@ -224,6 +224,31 @@ This separation makes the variable system easier to test, maintain, and extend.
 
 ---
 
+# 🧪 Testing
+
+The project ships with unit and end to end tests.
+
+```bash
+npm test           # unit and component tests (Vitest)
+npm run test:watch # same, in watch mode
+npm run test:e2e   # browser tests (Playwright, needs a build)
+npm run test:all   # both
+```
+
+| Area | File |
+| ---- | ---- |
+| Storage migration and recovery | `src/lib/workflow/workflow-storage.test.ts` |
+| Workflow, node and import validation | `src/lib/workflow/validation.test.ts` |
+| Variable parsing and resolution | `src/lib/workflow/variables/variable-resolver.test.ts` |
+| Variable scope and pre-run audit | `src/lib/workflow/variables/variable-scope.test.ts` |
+| Execution engine, branching and failures | `src/lib/workflow/execution/execution-engine.test.ts` |
+| Create, save, import, export, reset | `src/components/workflow/workflow-actions.test.tsx` |
+| Full user flows in a real browser | `e2e/workflows.spec.ts` |
+
+Run the browser tests once with `npx playwright install chromium`.
+
+---
+
 # 📁 Project Structure
 
 ```text

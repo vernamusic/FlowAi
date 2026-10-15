@@ -366,6 +366,14 @@ function getChildren(
       return true;
     }
 
+    /**
+     * Without a result the caller is asking for every branch, which is
+     * how the not-taken children get marked as skipped.
+     */
+    if (conditionResult === undefined) {
+      return true;
+    }
+
     if (edge.sourceHandle === "true") {
       return conditionResult === true;
     }
@@ -540,6 +548,7 @@ async function executeLoopBody(
   } = params;
 
   const done = new Set<string>();
+  const attempts = new Map<string, number>();
   const queue: WorkflowNode[] = [...getLoopBodyRoots(workflow, root.id)];
 
   while (queue.length > 0) {
@@ -562,11 +571,14 @@ async function executeLoopBody(
     );
 
     if (!ready) {
-      queue.push(node);
+      const attemptsForNode = (attempts.get(node.id) ?? 0) + 1;
+      attempts.set(node.id, attemptsForNode);
 
-      if (queue.length > workflow.nodes.length * 2) {
+      if (attemptsForNode > workflow.nodes.length) {
         throw new Error("The loop body contains an unresolved dependency.");
       }
+
+      queue.push(node);
 
       continue;
     }
@@ -811,6 +823,11 @@ export async function executeWorkflow(
    */
   const loopOwned = new Set<string>();
 
+  /**
+   * How often a node has been put back on the queue waiting for a parent.
+   */
+  const attemptsByNode = new Map<string, number>();
+
   const markSkipped = (node: WorkflowNode, reason: string) => {
     if (completed.has(node.id) || failed.has(node.id) || skipped.has(node.id)) return;
     skipped.add(node.id);
@@ -1033,14 +1050,18 @@ export async function executeWorkflow(
     );
 
     if (!dependenciesReady) {
-      queue.push(node);
-
       /**
-       * Prevent infinite loops.
+       * Count the attempts per node: the queue never grows when a single
+       * node waits for itself, so its length cannot detect a deadlock.
        */
-      if (queue.length > workflow.nodes.length * 2) {
+      const attempts = (attemptsByNode.get(node.id) ?? 0) + 1;
+      attemptsByNode.set(node.id, attempts);
+
+      if (attempts > workflow.nodes.length) {
         throw new Error("Workflow contains unresolved dependencies.");
       }
+
+      queue.push(node);
 
       continue;
     }

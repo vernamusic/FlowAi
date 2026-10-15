@@ -93,9 +93,17 @@ export function parseVariables(text: string): ParsedVariable[] {
         ...parsed,
         raw: text.slice(start, start + content.length + 4),
       });
+
+      cursor = start + content.length + 4;
+
+      continue;
     }
 
-    cursor = start + content.length + 4;
+    /**
+     * A malformed expression must not swallow the rest of the text, so
+     * scanning resumes right after its opening braces.
+     */
+    cursor = start + 2;
   }
 
   return variables;

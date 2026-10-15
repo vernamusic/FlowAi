@@ -70,7 +70,14 @@ function readWorkflows(): Workflow[] {
   if (!canUseStorage()) return [];
 
   const raw = window.localStorage.getItem(storageKey);
-  if (!raw) return [];
+  if (!raw) {
+    /**
+     * The key can disappear between sessions, for example when the user
+     * clears site data, so the reported status has to follow.
+     */
+    setStorageStatus({ savedAt: null, recovered: false });
+    return [];
+  }
 
   try {
     const parsed: unknown = JSON.parse(raw);
