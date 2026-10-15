@@ -164,7 +164,27 @@ export function ExecutionPanel() {
                           Output
                         </p>
 
-                        <div className="relative"><pre className="overflow-x-auto rounded-md bg-zinc-950 p-2 pr-8 text-[10px] leading-5 text-zinc-500">{JSON.stringify(nodeExecution.output ?? {}, null, 2)}</pre><CopyButton value={JSON.stringify(nodeExecution.output ?? {}, null, 2)} /></div>
+                        {isAiTextOutput(node.type, nodeExecution.output) ? (
+                          <div className="overflow-hidden rounded-md border border-zinc-800">
+                            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words bg-zinc-950 p-2 text-[10px] leading-5 text-zinc-400">
+                              {String(nodeExecution.output?.response ?? "")}
+                              {nodeExecution.status === "running" && (
+                                <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-violet-400 align-middle" />
+                              )}
+                            </pre>
+
+                            <AiOutputMeta output={nodeExecution.output ?? {}} />
+                          </div>
+                        ) : (
+                          <div className="relative">
+                            <pre className="overflow-x-auto rounded-md bg-zinc-950 p-2 pr-8 text-[10px] leading-5 text-zinc-500">
+                              {JSON.stringify(nodeExecution.output ?? {}, null, 2)}
+                            </pre>
+                            <CopyButton
+                              value={JSON.stringify(nodeExecution.output ?? {}, null, 2)}
+                            />
+                          </div>
+                        )}
                       </div>
 
                       {/* Error */}
@@ -190,4 +210,46 @@ export function ExecutionPanel() {
 
 function CopyButton({ value }: { value: string }) {
   return <button type="button" onClick={() => void navigator.clipboard?.writeText(value)} aria-label="Copy details" className="absolute right-1 top-1 rounded p-1 text-zinc-600 transition hover:bg-zinc-800 hover:text-zinc-200"><Copy className="h-3 w-3" /></button>;
+}
+
+function isAiTextOutput(
+  nodeType: string,
+  output: Record<string, unknown> | undefined,
+) {
+  return (
+    nodeType === "ai-prompt" &&
+    typeof output?.response === "string" &&
+    output.parsed === undefined
+  );
+}
+
+function AiOutputMeta({ output }: { output: Record<string, unknown> }) {
+  const usage = output.usage as
+    | { totalTokens?: number; estimated?: boolean }
+    | undefined;
+  const model = typeof output.model === "string" ? output.model : undefined;
+  const cost = typeof output.cost === "number" ? output.cost : undefined;
+  const costEstimated = output.costEstimated === true;
+
+  if (!model && !usage?.totalTokens && cost === undefined) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-zinc-800 px-2 py-1.5 text-[9px] text-zinc-600">
+      {model && <span>{model}</span>}
+
+      {usage?.totalTokens !== undefined && (
+        <span>
+          {usage.totalTokens} tokens{usage.estimated ? " (est.)" : ""}
+        </span>
+      )}
+
+      <span>
+        {cost !== undefined
+          ? `${cost < 0.01 ? `$${cost.toFixed(5)}` : `$${cost.toFixed(4)}`}${costEstimated ? " est." : ""}`
+          : "cost unavailable"}
+      </span>
+    </div>
+  );
 }

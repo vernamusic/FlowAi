@@ -1,10 +1,25 @@
 export type NodeType =
   | "manual-trigger"
+  | "webhook-trigger"
   | "ai-prompt"
   | "condition"
-  | "http-request";
+  | "http-request"
+  | "transform"
+  | "json-parser"
+  | "loop"
+  | "delay"
+  | "output";
 
 export type NodeCategory = "trigger" | "ai" | "logic" | "action";
+
+/**
+ * Nodes that start a workflow. Triggers never accept an incoming edge.
+ */
+export const TRIGGER_NODE_TYPES: NodeType[] = ["manual-trigger", "webhook-trigger"];
+
+export function isTriggerNode(type: NodeType): boolean {
+  return TRIGGER_NODE_TYPES.includes(type);
+}
 
 export interface WorkflowNodePosition {
   x: number;
@@ -169,6 +184,12 @@ export type ExecutionEvent =
       type: "node-failed";
       nodeId: string;
       error: string;
+    }
+  | {
+      type: "node-stream";
+      nodeId: string;
+      delta: string;
+      accumulated: string;
     }
   | {
       type: "workflow-completed";

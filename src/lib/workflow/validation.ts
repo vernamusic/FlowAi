@@ -1,4 +1,8 @@
 import type { NodeType, Workflow, WorkflowEdge, WorkflowNode } from "@/types/workflow";
+import { isTriggerNode } from "@/types/workflow";
+import { getAiProvider, normalizeBaseUrl } from "./execution/ai/providers";
+import { parseJsonSchema } from "./execution/ai/response-format";
+import { MAX_DELAY_MS, MIN_DELAY_MS } from "./execution/nodes/delay";
 
 export interface WorkflowValidationIssue {
   code: string;
@@ -10,6 +14,41 @@ export interface WorkflowValidationIssue {
 export interface ValidationResult {
   valid: boolean;
   issues: WorkflowValidationIssue[];
+}
+
+/**
+ * Problems that would make an AI node fail at run time.
+ */
+export function validateAiConfig(
+  config: Record<string, unknown>,
+): WorkflowValidationIssue | null {
+  const providerId =
+    typeof config.providerId === "string" && config.providerId
+      ? config.providerId
+      : undefined;
+  const provider = getAiProvider(providerId);
+
+  if (provider.supportsCustomBaseUrl && !normalizeBaseUrl(String(config.baseUrl ?? "")) && !provider.defaultBaseUrl) {
+    return {
+      code: "missing-base-url",
+      message: `${provider.label} needs a base URL such as https://api.example.com/v1.`,
+    };
+  }
+
+  if (config.responseFormat === "schema") {
+    const parsed = parseJsonSchema(
+      typeof config.jsonSchema === "string" ? config.jsonSchema : "",
+    );
+
+    if (parsed.error) {
+      return {
+        code: "invalid-schema",
+        message: `The structured output schema is not usable: ${parsed.error}`,
+      };
+    }
+  }
+
+  return null;
 }
 
 function isHttpUrl(value: unknown) {
@@ -54,6 +93,10 @@ function validateNodeConfig(node: WorkflowNode): WorkflowValidationIssue[] {
     if (typeof prompt !== "string" || !prompt.trim()) {
       return [{ code: "missing-prompt", nodeId: node.id, message: `${node.data.label} needs a prompt.` }];
     }
+    const aiIssue = validateAiConfig(config);
+    if (aiIssue) {
+      return [{ ...aiIssue, nodeId: node.id }];
+    }
   }
   if (node.type === "http-request" && !isHttpUrl(config.url)) {
     return [{ code: "invalid-url", nodeId: node.id, message: `${node.data.label} needs a valid HTTP or HTTPS URL.` }];
@@ -67,6 +110,61 @@ function validateNodeConfig(node: WorkflowNode): WorkflowValidationIssue[] {
       return [{ code: "invalid-condition", nodeId: node.id, message: `${node.data.label} needs complete condition values.` }];
     }
   }
+  if (node.type === "transform") {
+    const issues: WorkflowValidationIssue[] = [];
+    const name = typeof config.name === "string" ? config.name.trim() : "";
+
+    if (!name) {
+      issues.push({ code: "missing-variable-name", nodeId: node.id, message: `${node.data.label} needs a variable name.` });
+    } else if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+      issues.push({
+        code: "invalid-variable-name",
+        nodeId: node.id,
+        message: `"${name}" cannot be a variable name. Use letters, numbers, and underscores, starting with a letter.`,
+      });
+    }
+
+    if (typeof config.value !== "string") {
+      issues.push({ code: "missing-variable-value", nodeId: node.id, message: `${node.data.label} needs a value.` });
+    }
+
+    return issues;
+  }
+  if (node.type === "json-parser") {
+    if (typeof config.input !== "string" || !config.input.trim()) {
+      return [{ code: "missing-json-input", nodeId: node.id, message: `${node.data.label} needs an input value to parse.` }];
+    }
+  }
+  if (node.type === "loop") {
+    if (typeof config.items !== "string" || !config.items.trim()) {
+      return [{ code: "missing-loop-items", nodeId: node.id, message: `${node.data.label} needs a list of items to iterate over.` }];
+    }
+  }
+  if (node.type === "delay") {
+    const duration = config.durationMs;
+    if (typeof duration !== "number" || !Number.isFinite(duration) || duration < MIN_DELAY_MS || duration > MAX_DELAY_MS) {
+      return [{ code: "invalid-delay", nodeId: node.id, message: `${node.data.label} needs a duration between ${MIN_DELAY_MS}ms and ${MAX_DELAY_MS}ms.` }];
+    }
+  }
+  if (node.type === "output") {
+    if (typeof config.message !== "string" || !config.message.trim()) {
+      return [{ code: "missing-output-message", nodeId: node.id, message: `${node.data.label} needs a message.` }];
+    }
+  }
+  if (node.type === "webhook-trigger") {
+    const payload = typeof config.payload === "string" ? config.payload.trim() : "";
+    if (payload) {
+      try {
+        JSON.parse(payload);
+      } catch (error) {
+        return [{
+          code: "invalid-webhook-payload",
+          nodeId: node.id,
+          message: `${node.data.label} payload is not valid JSON${error instanceof Error ? `: ${error.message}` : "."}`,
+        }];
+      }
+    }
+  }
   return [];
 }
 
@@ -76,20 +174,22 @@ export function validateConnection(workflow: Workflow, edge: WorkflowEdge): Vali
   const issues: WorkflowValidationIssue[] = [];
   if (!source || !target) issues.push({ code: "missing-node", message: "Both ends of a connection must exist." });
   if (edge.source === edge.target) issues.push({ code: "self-connection", message: "A node cannot connect to itself." });
-  if (target?.type === "manual-trigger") issues.push({ code: "trigger-input", nodeId: target.id, message: "A manual trigger cannot have an incoming connection." });
+  if (target && isTriggerNode(target.type)) issues.push({ code: "trigger-input", nodeId: target.id, message: `A ${target.data.label} cannot have an incoming connection.` });
   if (source?.type === "condition" && edge.sourceHandle !== "true" && edge.sourceHandle !== "false") issues.push({ code: "condition-handle", nodeId: source.id, message: "Conditions must use their True or False branch." });
-  if (source && source.type !== "condition" && edge.sourceHandle) issues.push({ code: "unexpected-handle", nodeId: source.id, message: "This node does not have named output branches." });
+  if (source?.type === "loop" && edge.sourceHandle !== "body" && edge.sourceHandle !== "after") issues.push({ code: "loop-handle", nodeId: source.id, message: "Loops must use their Body handle to repeat, or the After handle to continue once." });
+  if (source && source.type !== "condition" && source.type !== "loop" && edge.sourceHandle) issues.push({ code: "unexpected-handle", nodeId: source.id, message: "This node does not have named output branches." });
   if (workflow.edges.some((item) => item.source === edge.source && item.target === edge.target && item.sourceHandle === edge.sourceHandle)) issues.push({ code: "duplicate-edge", message: "That connection already exists." });
   if (source?.type === "condition" && workflow.edges.some((item) => item.source === edge.source && item.sourceHandle === edge.sourceHandle)) issues.push({ code: "duplicate-branch", nodeId: source.id, message: `The ${edge.sourceHandle === "true" ? "True" : "False"} branch is already connected.` });
+  if (source?.type === "loop" && edge.sourceHandle === "after" && workflow.edges.some((item) => item.source === edge.source && item.sourceHandle === "after")) issues.push({ code: "duplicate-after", nodeId: source.id, message: "The After handle is already connected." });
   if (!issues.length && hasCycle({ ...workflow, edges: [...workflow.edges, edge] })) issues.push({ code: "cycle", message: "Connections cannot create a cycle." });
   return { valid: issues.length === 0, issues };
 }
 
 export function validateWorkflow(workflow: Workflow): ValidationResult {
   const issues: WorkflowValidationIssue[] = [];
-  const triggers = workflow.nodes.filter((node) => node.type === "manual-trigger");
-  if (workflow.nodes.length === 0) issues.push({ code: "empty", message: "Add a Manual Trigger to start building your workflow." });
-  if (triggers.length !== 1) issues.push({ code: "trigger-count", message: "A workflow needs exactly one Manual Trigger." });
+  const triggers = workflow.nodes.filter((node) => isTriggerNode(node.type));
+  if (workflow.nodes.length === 0) issues.push({ code: "empty", message: "Add a trigger to start building your workflow." });
+  if (triggers.length !== 1) issues.push({ code: "trigger-count", message: "A workflow needs exactly one trigger, such as Manual Trigger or Webhook Trigger." });
   for (const node of workflow.nodes) {
     issues.push(...validateNodeConfig(node));
     if (node.type === "condition") {
@@ -98,13 +198,66 @@ export function validateWorkflow(workflow: Workflow): ValidationResult {
         issues.push({ code: "missing-condition-branch", nodeId: node.id, message: `${node.data.label} needs both True and False branches.` });
       }
     }
+    if (node.type === "loop") {
+      const body = workflow.edges.filter((edge) => edge.source === node.id && edge.sourceHandle === "body");
+      if (!body.length) {
+        issues.push({ code: "empty-loop-body", nodeId: node.id, message: `${node.data.label} needs at least one node connected to its Body handle.` });
+      }
+    }
   }
-  for (const edge of workflow.edges) issues.push(...validateConnection({ ...workflow, edges: workflow.edges.filter((item) => item.id !== edge.id) }, edge).issues);
+  for (const edge of workflow.edges) {
+    const others = validateConnection({ ...workflow, edges: workflow.edges.filter((item) => item.id !== edge.id) }, edge).issues;
+
+    /**
+     * Duplicates are reported once per connection below.
+     */
+    issues.push(...others.filter((issue) => issue.code !== "duplicate-edge"));
+  }
+  /**
+   * `validateConnection` always receives the candidate edge on its own,
+   * so an already saved duplicate has to be checked here.
+   */
+  const reportedDuplicates = new Set<string>();
+
+  for (const edge of workflow.edges) {
+    const key = `${edge.source}|${edge.target}|${edge.sourceHandle ?? ""}`;
+
+    if (reportedDuplicates.has(key)) {
+      continue;
+    }
+
+    const duplicate = workflow.edges.some(
+      (item) =>
+        item.id !== edge.id &&
+        `${item.source}|${item.target}|${item.sourceHandle ?? ""}` === key,
+    );
+
+    if (duplicate) {
+      reportedDuplicates.add(key);
+
+      issues.push({
+        code: "duplicate-edge",
+        edgeId: edge.id,
+        message: "The workflow contains the same connection twice.",
+      });
+    }
+  }
   if (hasCycle(workflow)) issues.push({ code: "cycle", message: "The workflow contains a cycle." });
   return { valid: issues.length === 0, issues };
 }
 
-const nodeTypes: NodeType[] = ["manual-trigger", "ai-prompt", "condition", "http-request"];
+const nodeTypes: NodeType[] = [
+  "manual-trigger",
+  "webhook-trigger",
+  "ai-prompt",
+  "condition",
+  "http-request",
+  "transform",
+  "json-parser",
+  "loop",
+  "delay",
+  "output",
+];
 
 export function parseImportedWorkflow(value: unknown): Workflow | null {
   if (!value || typeof value !== "object") return null;

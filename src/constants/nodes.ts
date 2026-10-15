@@ -1,4 +1,14 @@
-import { Bot, GitBranch, Globe, Play } from "lucide-react";
+import {
+  Bell,
+  Bot,
+  Braces,
+  Clock,
+  GitBranch,
+  Globe,
+  Play,
+  Repeat,
+  Webhook,
+} from "lucide-react";
 
 import type { NodeCategory, NodeType } from "@/types/workflow";
 
@@ -28,6 +38,18 @@ export const NODE_DEFINITIONS: NodeDefinition[] = [
   },
 
   {
+    type: "webhook-trigger",
+
+    label: "Webhook Trigger",
+
+    description: "Simulate an incoming webhook payload",
+
+    category: "trigger",
+
+    icon: Webhook,
+  },
+
+  {
     type: "ai-prompt",
 
     label: "AI Prompt",
@@ -52,6 +74,42 @@ export const NODE_DEFINITIONS: NodeDefinition[] = [
   },
 
   {
+    type: "transform",
+
+    label: "Set Variable",
+
+    description: "Build a value from templates",
+
+    category: "logic",
+
+    icon: Braces,
+  },
+
+  {
+    type: "json-parser",
+
+    label: "JSON Parser",
+
+    description: "Parse JSON and pick a path",
+
+    category: "logic",
+
+    icon: Braces,
+  },
+
+  {
+    type: "loop",
+
+    label: "Loop",
+
+    description: "Repeat downstream nodes per item",
+
+    category: "logic",
+
+    icon: Repeat,
+  },
+
+  {
     type: "http-request",
 
     label: "HTTP Request",
@@ -61,5 +119,29 @@ export const NODE_DEFINITIONS: NodeDefinition[] = [
     category: "action",
 
     icon: Globe,
+  },
+
+  {
+    type: "delay",
+
+    label: "Delay",
+
+    description: "Wait before continuing",
+
+    category: "action",
+
+    icon: Clock,
+  },
+
+  {
+    type: "output",
+
+    label: "Output",
+
+    description: "Log a message and notify",
+
+    category: "action",
+
+    icon: Bell,
   },
 ];

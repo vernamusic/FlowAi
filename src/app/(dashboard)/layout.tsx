@@ -1,4 +1,5 @@
 import { Sidebar } from "@/components/layout/sidebar";
+import { Toaster } from "@/components/layout/toaster";
 import { Topbar } from "@/components/layout/topbar";
 
 export default function DashboardLayout({
@@ -21,6 +22,8 @@ export default function DashboardLayout({
 
         <main className="flex min-h-0 flex-1 flex-col">{children}</main>
       </div>
+
+      <Toaster />
     </div>
   );
 }

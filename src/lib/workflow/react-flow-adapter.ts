@@ -23,6 +23,11 @@ export function workflowNodeToReactFlowNode(
     data: {
       ...node.data,
 
+      /**
+       * The node card needs the type to decide which handles to draw.
+       */
+      type: node.type,
+
       executionStatus: executionStatus ?? "pending",
     },
   };

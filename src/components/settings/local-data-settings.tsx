@@ -55,7 +55,7 @@ export function LocalDataSettings() {
 
       <div className="mt-5 rounded-xl border border-red-500/20 bg-red-500/5 p-5">
         <h2 className="text-sm font-semibold text-zinc-100">Reset local workflows</h2>
-        <p className="mt-2 text-xs leading-5 text-zinc-500">This deletes every workflow stored by FlowAI in this browser. It does not affect your OpenAI session key.</p>
+        <p className="mt-2 text-xs leading-5 text-zinc-500">This deletes every workflow stored by FlowAI in this browser. It does not affect your AI provider session keys.</p>
         <button type="button" onClick={handleReset} disabled={workflowCount === 0} className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg border border-red-500/30 px-3 text-sm text-red-300 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400">
           <RotateCcw className="h-4 w-4" /> Reset all workflows
         </button>

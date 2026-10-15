@@ -5,10 +5,38 @@ import type {
   WorkflowExecution,
   WorkflowNode,
 } from "@/types/workflow";
-import { createVariableContext } from "@/lib/workflow/variables/variable-context";
+import { createVariableContext, createVariableKey } from "@/lib/workflow/variables/variable-context";
 import { executeHttpRequest } from "@/lib/workflow/execution/http-request";
-import { executeOpenAiPrompt } from "@/lib/workflow/execution/openai";
+import { readAiConfig } from "@/lib/workflow/execution/ai/config";
+import { runAiPrompt } from "@/lib/workflow/execution/ai/run-ai-prompt";
+import {
+  createLoopVariables,
+  readLoopConfig,
+  resolveLoopItems,
+  type LoopConfig,
+} from "@/lib/workflow/execution/nodes/loop";
+import {
+  executeDelay,
+  readDelayConfig,
+} from "@/lib/workflow/execution/nodes/delay";
+import {
+  executeJsonParser,
+  readJsonParserConfig,
+} from "@/lib/workflow/execution/nodes/json-parser";
+import {
+  executeOutput,
+  readOutputConfig,
+} from "@/lib/workflow/execution/nodes/output";
+import {
+  executeTransform,
+  readTransformConfig,
+} from "@/lib/workflow/execution/nodes/transform";
+import {
+  executeWebhookTrigger,
+  readWebhookTriggerConfig,
+} from "@/lib/workflow/execution/nodes/webhook-trigger";
 import { resolveValue } from "@/lib/workflow/variables/variable-resolver";
+import type { VariableContext } from "@/lib/workflow/variables/variable-context";
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -93,6 +121,12 @@ export type ExecutionEvent =
       reason: string;
     }
   | {
+      type: "node-stream";
+      nodeId: string;
+      delta: string;
+      accumulated: string;
+    }
+  | {
       type: "workflow-completed";
       execution: WorkflowExecution;
     }
@@ -107,7 +141,15 @@ export type ExecutionEvent =
 async function executeNode(
   node: WorkflowNode,
   input: Record<string, unknown>,
-  options: { dryRun?: boolean; signal?: AbortSignal } = {},
+  options: {
+    dryRun?: boolean;
+    signal?: AbortSignal;
+    onStreamDelta?: (delta: string, accumulated: string) => void;
+    runLoop?: (
+      node: WorkflowNode,
+      config: LoopConfig,
+    ) => Promise<Record<string, unknown>>;
+  } = {},
 ): Promise<Record<string, unknown>> {
   void input;
 
@@ -128,21 +170,84 @@ async function executeNode(
             : "user_123",
       };
 
-    case "ai-prompt":
+    case "ai-prompt": {
+      const config = readAiConfig(node.data.config);
+
       if (options.dryRun) {
         return {
-          response: `[Dry run] ${typeof node.data.config.prompt === "string" ? node.data.config.prompt : "Sample AI response"}`,
-          model: typeof node.data.config.model === "string" ? node.data.config.model : "gpt-4o-mini",
+          response: `[Dry run] ${config.prompt || "Sample AI response"}`,
+          model: config.model,
+          provider: "Dry run",
+          responseFormat: config.responseFormat,
+          streamed: false,
         };
       }
-      return executeOpenAiPrompt({
-        prompt: typeof node.data.config.prompt === "string" ? node.data.config.prompt : "",
-        model: typeof node.data.config.model === "string" ? node.data.config.model : "gpt-4o-mini",
-        temperature: typeof node.data.config.temperature === "number" ? node.data.config.temperature : 0.7,
-        maxTokens: typeof node.data.config.maxTokens === "number" ? node.data.config.maxTokens : 1000,
-        instructions: typeof node.data.config.instructions === "string" ? node.data.config.instructions : undefined,
+
+      /**
+       * The config was already resolved by the engine, so the prompt and
+       * instructions arrive with their variables already substituted.
+       */
+      return runAiPrompt(config, {
         signal: options.signal,
+        onDelta: options.onStreamDelta,
       });
+    }
+
+    case "delay":
+      return executeDelay(readDelayConfig(node.data.config), options);
+
+    case "transform":
+      if (options.dryRun) {
+        return {
+          [readTransformConfig(node.data.config).name]: "[Dry run] sample value",
+        };
+      }
+
+      return executeTransform(readTransformConfig(node.data.config));
+
+    case "json-parser":
+      if (options.dryRun) {
+        return {
+          data: { sample: true },
+          path: readJsonParserConfig(node.data.config).path,
+          found: true,
+          type: "object",
+          dryRun: true,
+        };
+      }
+
+      return executeJsonParser(readJsonParserConfig(node.data.config));
+
+    case "webhook-trigger":
+      return executeWebhookTrigger(readWebhookTriggerConfig(node.data.config));
+
+    case "output":
+      return executeOutput(readOutputConfig(node.data.config), options);
+
+    case "loop": {
+      const config = readLoopConfig(node.data.config);
+
+      if (options.dryRun) {
+        const count = Math.min(2, estimateDryRunIterations(config.items));
+
+        return {
+          count,
+          iterations: count,
+          results: [],
+          dryRun: true,
+        };
+      }
+
+      /**
+       * Iterating a subtree needs the shared execution state, so the
+       * runner is provided by `executeWorkflow`.
+       */
+      if (!options.runLoop) {
+        throw new Error("This loop cannot run because it has no workflow context.");
+      }
+
+      return options.runLoop(node, config);
+    }
 
     case "http-request": {
       if (options.dryRun) {
@@ -249,6 +354,14 @@ function getChildren(
       return false;
     }
 
+    /**
+     * A loop runs its body internally, so only the "after" branch
+     * continues in the main pass.
+     */
+    if (node.type === "loop") {
+      return edge.sourceHandle !== "body";
+    }
+
     if (node.type !== "condition") {
       return true;
     }
@@ -270,6 +383,16 @@ function getChildren(
 }
 
 /**
+ * Direct children of a loop body, connected through its body handle.
+ */
+function getLoopBodyRoots(workflow: Workflow, loopNodeId: string): WorkflowNode[] {
+  return workflow.edges
+    .filter((edge) => edge.source === loopNodeId && edge.sourceHandle === "body")
+    .map((edge) => workflow.nodes.find((node) => node.id === edge.target))
+    .filter((node): node is WorkflowNode => Boolean(node));
+}
+
+/**
  * Find parents of a node.
  */
 function getParents(workflow: Workflow, nodeId: string): WorkflowNode[] {
@@ -278,6 +401,326 @@ function getParents(workflow: Workflow, nodeId: string): WorkflowNode[] {
   return edges
     .map((edge) => workflow.nodes.find((node) => node.id === edge.source))
     .filter((node): node is WorkflowNode => Boolean(node));
+}
+
+/**
+ * Every node reachable downstream of the given start nodes.
+ */
+function collectDescendants(
+  workflow: Workflow,
+  startNodeIds: string[],
+): string[] {
+  const found = new Set<string>();
+
+  for (const startNodeId of startNodeIds) {
+    if (!found.has(startNodeId)) {
+      found.add(startNodeId);
+    }
+  }
+
+  const queue: string[] = [...startNodeIds];
+
+  while (queue.length > 0) {
+    const currentNodeId = queue.shift();
+
+    if (!currentNodeId) {
+      continue;
+    }
+
+    for (const edge of workflow.edges) {
+      if (edge.source !== currentNodeId || found.has(edge.target)) {
+        continue;
+      }
+
+      found.add(edge.target);
+      queue.push(edge.target);
+    }
+  }
+
+  return [...found];
+}
+
+/**
+ * Guess how many iterations a dry run would perform, so the preview does
+ * not have to run the whole list.
+ */
+function estimateDryRunIterations(items: string): number {
+  const trimmed = items.trim();
+
+  if (!trimmed) {
+    return 0;
+  }
+
+  if (/^\d+$/.test(trimmed)) {
+    return Number(trimmed);
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+
+    return Array.isArray(parsed) ? parsed.length : 1;
+  } catch {
+    return 1;
+  }
+}
+
+interface ExecuteLoopBodyOptions {
+  workflow: Workflow;
+
+  /** The loop node that owns this body. */
+  root: WorkflowNode;
+
+  config: LoopConfig;
+
+  itemVariables: VariableContext;
+
+  index: number;
+
+  total: number;
+
+  execution: WorkflowExecution;
+
+  executionId: string;
+
+  onEvent?: (event: ExecutionEvent) => void;
+
+  options: {
+    dryRun?: boolean;
+    signal?: AbortSignal;
+    onStreamDelta?: (delta: string, accumulated: string) => void;
+  };
+
+  outputs: Map<string, Record<string, unknown>>;
+
+  completed: Set<string>;
+
+  failed: Set<string>;
+
+  loopOwned: Set<string>;
+
+  runLoop: (
+    node: WorkflowNode,
+    config: LoopConfig,
+  ) => Promise<Record<string, unknown>>;
+
+  markBodySkipped: (node: WorkflowNode, reason: string) => void;
+
+  /** Outputs of this iteration, keyed by node variable name. */
+  iterationOutputs: Record<string, unknown>;
+}
+
+/**
+ * Execute the nodes downstream of a loop for a single item.
+ *
+ * The pass mirrors the main workflow loop: dependency order, condition
+ * branches, per-node status, and logs. The only difference is that every
+ * node sees the current item through the loop variables.
+ */
+async function executeLoopBody(
+  params: ExecuteLoopBodyOptions,
+): Promise<void> {
+  const {
+    workflow,
+    root,
+    config,
+    itemVariables,
+    index,
+    total,
+    execution,
+    executionId,
+    onEvent,
+    options,
+    outputs,
+    completed,
+    failed,
+    loopOwned,
+    runLoop,
+    markBodySkipped,
+    iterationOutputs,
+  } = params;
+
+  const done = new Set<string>();
+  const queue: WorkflowNode[] = [...getLoopBodyRoots(workflow, root.id)];
+
+  while (queue.length > 0) {
+    if (options.signal?.aborted) {
+      throw new DOMException("Loop canceled", "AbortError");
+    }
+
+    const node = queue.shift();
+
+    if (!node || done.has(node.id) || !loopOwned.has(node.id)) {
+      continue;
+    }
+
+    const parents = getParents(workflow, node.id).filter(
+      (parent) => parent.id !== root.id,
+    );
+
+    const ready = parents.every(
+      (parent) => done.has(parent.id) || completed.has(parent.id),
+    );
+
+    if (!ready) {
+      queue.push(node);
+
+      if (queue.length > workflow.nodes.length * 2) {
+        throw new Error("The loop body contains an unresolved dependency.");
+      }
+
+      continue;
+    }
+
+    const nodeExecution = execution.nodes.find(
+      (item) => item.nodeId === node.id,
+    );
+
+    if (!nodeExecution) {
+      continue;
+    }
+
+    const startedAt = new Date().toISOString();
+
+    nodeExecution.status = "running";
+    nodeExecution.startedAt = startedAt;
+    onEvent?.({ type: "node-started", nodeId: node.id });
+
+    const iterationLog = createExecutionLog(
+      executionId,
+      "info",
+      `${node.data.label} started`,
+      node.id,
+    );
+
+    iterationLog.details = { loop: root.data.label, iteration: index + 1, total };
+    execution.logs.push(iterationLog);
+    onEvent?.({ type: "log", log: iterationLog });
+
+    /**
+     * Body variables sit on top of everything completed so far.
+     */
+    const bodyContext: VariableContext = {
+      ...createVariableContext(workflow.nodes, outputs),
+      ...itemVariables,
+    };
+
+    const input: Record<string, unknown> = {};
+
+    for (const parent of parents) {
+      Object.assign(input, outputs.get(parent.id) ?? {});
+    }
+
+    try {
+      const resolvedConfig = resolveValue(node.data.config, bodyContext);
+
+      const executableNode: WorkflowNode = {
+        ...node,
+        data: {
+          ...node.data,
+          config: resolvedConfig as Record<string, unknown>,
+        },
+      };
+
+      const output = await executeNode(executableNode, input, {
+        dryRun: options.dryRun,
+        signal: options.signal,
+        onStreamDelta: options.onStreamDelta,
+        runLoop,
+      });
+
+      const completedAt = new Date().toISOString();
+      const duration =
+        new Date(completedAt).getTime() - new Date(startedAt).getTime();
+
+      nodeExecution.status = "success";
+      nodeExecution.output = output;
+      nodeExecution.completedAt = completedAt;
+      nodeExecution.duration = duration;
+      nodeExecution.error = undefined;
+
+      outputs.set(node.id, output);
+      iterationOutputs[createVariableKey(node)] = output;
+      done.add(node.id);
+      completed.add(node.id);
+
+      const completedLog = createExecutionLog(
+        executionId,
+        "success",
+        `${node.data.label} completed`,
+        node.id,
+      );
+
+      completedLog.input = input;
+      completedLog.output = output;
+      completedLog.duration = duration;
+      completedLog.details = { loop: root.data.label, iteration: index + 1, total };
+      execution.logs.push(completedLog);
+      onEvent?.({ type: "node-completed", nodeId: node.id, output });
+      onEvent?.({ type: "log", log: completedLog });
+
+      const conditionResult =
+        node.type === "condition" && typeof output.result === "boolean"
+          ? output.result
+          : undefined;
+
+      const allChildren = getChildren(workflow, node);
+
+      for (const child of getChildren(workflow, node, conditionResult)) {
+        if (!done.has(child.id)) {
+          queue.push(child);
+        }
+      }
+
+      if (node.type === "condition") {
+        for (const child of allChildren) {
+          if (!loopOwned.has(child.id)) {
+            continue;
+          }
+
+          if (!getChildren(workflow, node, conditionResult).some((taken) => taken.id === child.id)) {
+            markBodySkipped(
+              child,
+              `Condition evaluated ${conditionResult ? "true" : "false"} inside the loop.`,
+            );
+          }
+        }
+      }
+    } catch (error) {
+      if (options.signal?.aborted) {
+        throw new DOMException("Loop canceled", "AbortError");
+      }
+
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+
+      const completedAt = new Date().toISOString();
+
+      nodeExecution.status = "error";
+      nodeExecution.error = errorMessage;
+      nodeExecution.completedAt = completedAt;
+      nodeExecution.duration =
+        new Date(completedAt).getTime() - new Date(startedAt).getTime();
+      failed.add(node.id);
+
+      const errorLog = createExecutionLog(
+        executionId,
+        "error",
+        `${node.data.label} failed`,
+        node.id,
+      );
+
+      errorLog.input = input;
+      errorLog.error = errorMessage;
+      errorLog.details = { loop: root.data.label, iteration: index + 1, total };
+      execution.logs.push(errorLog);
+      onEvent?.({ type: "node-failed", nodeId: node.id, error: errorMessage });
+      onEvent?.({ type: "log", log: errorLog });
+
+      if (config.stopOnError) {
+        throw error;
+      }
+    }
+  }
 }
 
 /**
@@ -362,6 +805,12 @@ export async function executeWorkflow(
   const skipped = new Set<string>();
   let canceled = false;
 
+  /**
+   * Nodes owned by a loop body. They run inside the iteration and are
+   * never queued by the main pass.
+   */
+  const loopOwned = new Set<string>();
+
   const markSkipped = (node: WorkflowNode, reason: string) => {
     if (completed.has(node.id) || failed.has(node.id) || skipped.has(node.id)) return;
     skipped.add(node.id);
@@ -376,6 +825,160 @@ export async function executeWorkflow(
     onEvent?.({ type: "node-skipped", nodeId: node.id, reason });
     onEvent?.({ type: "log", log });
     for (const child of getChildren(workflow, node)) markSkipped(child, reason);
+  };
+
+  /**
+   * Run every node downstream of a loop once per item.
+   *
+   * The body is a self-contained pass: it resolves its own variables
+   * (including the current item), keeps its own condition branches, and
+   * reports the results back so the loop node can summarize them.
+   */
+  const runLoopNode = async (
+    loopNode: WorkflowNode,
+    config: LoopConfig,
+  ): Promise<Record<string, unknown>> => {
+    const items = resolveLoopItems(config);
+    const bodyRoots = getLoopBodyRoots(workflow, loopNode.id);
+
+    if (bodyRoots.length === 0) {
+      throw new Error(
+        "This loop has nothing to repeat. Connect the nodes to run from its Body handle.",
+      );
+    }
+
+    const bodyNodes = collectDescendants(
+      workflow,
+      bodyRoots.map((node) => node.id),
+    );
+
+    for (const nodeId of bodyNodes) {
+      loopOwned.add(nodeId);
+    }
+
+    /**
+     * Reuse the skip marker for branches the loop did not take.
+     */
+    const markBodySkipped = (node: WorkflowNode, reason: string) => {
+      if (completed.has(node.id) || failed.has(node.id) || skipped.has(node.id)) {
+        return;
+      }
+
+      skipped.add(node.id);
+
+      const nodeExecution = execution.nodes.find(
+        (item) => item.nodeId === node.id,
+      );
+
+      if (nodeExecution) {
+        nodeExecution.status = "skipped";
+        nodeExecution.completedAt = new Date().toISOString();
+      }
+
+      const log = createExecutionLog(
+        executionId,
+        "info",
+        `${node.data.label} skipped`,
+        node.id,
+      );
+
+      log.error = reason;
+      log.details = { loop: loopNode.data.label };
+      execution.logs.push(log);
+      onEvent?.({ type: "node-skipped", nodeId: node.id, reason });
+      onEvent?.({ type: "log", log });
+
+      for (const child of getChildren(workflow, node)) {
+        markBodySkipped(child, reason);
+      }
+    };
+
+    const iterationLog = createExecutionLog(
+      executionId,
+      "info",
+      `${loopNode.data.label} iterating over ${items.length} item${items.length === 1 ? "" : "s"}`,
+      loopNode.id,
+    );
+
+    iterationLog.details = {
+      count: items.length,
+      itemName: config.itemName,
+      indexName: config.indexName,
+    };
+    execution.logs.push(iterationLog);
+    onEvent?.({ type: "log", log: iterationLog });
+
+    const results: Record<string, unknown>[] = [];
+
+    for (const [index, item] of items.entries()) {
+      if (options.signal?.aborted) {
+        canceled = true;
+        break;
+      }
+
+      const itemVariables = createLoopVariables(
+        config,
+        item,
+        index,
+        items.length,
+      );
+
+      /**
+       * Each iteration starts from a clean slate so a node that did not
+       * run in the previous pass is not treated as done.
+       */
+      for (const nodeId of bodyNodes) {
+        skipped.delete(nodeId);
+      }
+
+      const iterationOutputs: Record<string, unknown> = {};
+
+      await executeLoopBody({
+        workflow,
+        root: loopNode,
+        config,
+        itemVariables,
+        index,
+        total: items.length,
+        execution,
+        executionId,
+        onEvent,
+        options,
+        outputs,
+        completed,
+        failed,
+        loopOwned,
+        runLoop: runLoopNode,
+        markBodySkipped,
+        iterationOutputs,
+      });
+
+      results.push(iterationOutputs);
+
+      const iterationDone = createExecutionLog(
+        executionId,
+        "success",
+        `${loopNode.data.label} iteration ${index + 1} of ${items.length}`,
+        loopNode.id,
+      );
+
+      iterationDone.details = {
+        index,
+        total: items.length,
+        item,
+        ...iterationOutputs,
+      };
+      execution.logs.push(iterationDone);
+      onEvent?.({ type: "log", log: iterationDone });
+    }
+
+    return {
+      count: results.length,
+      iterations: results.length,
+      results,
+      itemName: config.itemName,
+      indexName: config.indexName,
+    };
   };
 
   /**
@@ -410,6 +1013,13 @@ export async function executeWorkflow(
      * Already failed.
      */
     if (failed.has(node.id)) {
+      continue;
+    }
+
+    /**
+     * Nodes inside a loop already ran during the iteration pass.
+     */
+    if (loopOwned.has(node.id)) {
       continue;
     }
 
@@ -522,7 +1132,20 @@ export async function executeWorkflow(
         },
       };
 
-      const output = await executeNode(executableNode, input, options);
+      const output = await executeNode(executableNode, input, {
+        ...options,
+        runLoop: runLoopNode,
+        onStreamDelta:
+          node.type === "ai-prompt" && !options.dryRun
+            ? (delta, accumulated) =>
+                onEvent?.({
+                  type: "node-stream",
+                  nodeId: node.id,
+                  delta,
+                  accumulated,
+                })
+            : undefined,
+      });
 
       const completedAt = new Date().toISOString();
 
@@ -575,6 +1198,29 @@ export async function executeWorkflow(
           url: executableNode.data.config.url ?? "",
           status: output.status ?? null,
           success: output.success ?? false,
+        };
+      }
+
+      if (node.type === "ai-prompt") {
+        const usage = output.usage as
+          | {
+              promptTokens?: number;
+              completionTokens?: number;
+              totalTokens?: number;
+              estimated?: boolean;
+            }
+          | undefined;
+
+        completedLog.details = {
+          provider: output.provider ?? null,
+          model: output.model ?? null,
+          responseFormat: output.responseFormat ?? "text",
+          promptTokens: usage?.promptTokens ?? null,
+          completionTokens: usage?.completionTokens ?? null,
+          totalTokens: usage?.totalTokens ?? null,
+          usageEstimated: usage?.estimated ?? true,
+          cost: typeof output.cost === "number" ? output.cost : null,
+          costEstimated: output.costEstimated ?? true,
         };
       }
 

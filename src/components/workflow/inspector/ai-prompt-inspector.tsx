@@ -1,15 +1,35 @@
 "use client";
 
-import { Eye, EyeOff, KeyRound, ShieldCheck } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { useMemo, useState } from "react";
 
 import {
-  getOpenAiApiKey,
-  setOpenAiApiKey,
-  subscribeToOpenAiApiKey,
-} from "@/lib/workflow/execution/openai";
+  findUnresolvedReferences,
+  readAiConfig,
+} from "@/lib/workflow/execution/ai/config";
+import type {
+  AiPromptConfig,
+  AiResponseFormat,
+  AiRunResult,
+} from "@/lib/workflow/execution/ai/types";
+import { createVariableContext } from "@/lib/workflow/variables/variable-context";
+import type { VariableContext } from "@/lib/workflow/variables/variable-context";
+import { resolveValue } from "@/lib/workflow/variables/variable-resolver";
 import { useWorkflowStore } from "@/store/workflow.store";
+import type {
+  NodeExecution,
+  Workflow,
+  WorkflowExecution,
+} from "@/types/workflow";
+
 import { VariableInput } from "../variables/variable-input";
+
+import { AiModelSection } from "./ai/ai-model-section";
+import { AiPreviewPanels } from "./ai/ai-preview-panels";
+import { AiProviderSection } from "./ai/ai-provider-section";
+import { AiResponseFormatSection } from "./ai/ai-response-format-section";
+import { AiTestRun } from "./ai/ai-test-run";
+import { AiUsagePanel } from "./ai/ai-usage-panel";
+import { PromptLibrary } from "./ai/prompt-library";
 
 interface AIPromptInspectorProps {
   nodeId: string;
@@ -21,108 +41,267 @@ export function AIPromptInspector({ nodeId }: AIPromptInspectorProps) {
   const getAvailableVariables = useWorkflowStore(
     (state) => state.getAvailableVariables,
   );
-  const apiKey = useSyncExternalStore(
-    subscribeToOpenAiApiKey,
-    getOpenAiApiKey,
-    () => "",
-  );
-  const [showKey, setShowKey] = useState(false);
+  const execution = useWorkflowStore((state) => state.execution);
+  const executionHistory = useWorkflowStore((state) => state.executionHistory);
+
+  const [testResult, setTestResult] = useState<AiRunResult | null>(null);
+  const [streamingText, setStreamingText] = useState("");
 
   const node = workflow?.nodes.find((item) => item.id === nodeId);
-  if (!node) return null;
+
+  /**
+   * Variables resolve against the newest successful runs, so the preview
+   * and the test run send what the workflow would really send.
+   */
+  const variableContext = useMemo(
+    () => createPreviewContext(workflow, [execution, ...executionHistory]),
+    [execution, executionHistory, workflow],
+  );
+
+  const resolvedConfig = useMemo(() => {
+    const nodeConfig = node?.data.config;
+
+    if (!nodeConfig) {
+      return null;
+    }
+
+    const resolved = resolveValue(nodeConfig, variableContext);
+
+    return readAiConfig(resolved as Record<string, unknown>);
+  }, [node?.data.config, variableContext]);
+
+  if (!node || !resolvedConfig) return null;
 
   const config = node.data.config;
-  const prompt = typeof config.prompt === "string" ? config.prompt : "";
-  const instructions =
-    typeof config.instructions === "string" ? config.instructions : "";
-  const model =
-    typeof config.model === "string" ? config.model : "gpt-4o-mini";
-  const temperature =
-    typeof config.temperature === "number" ? config.temperature : 0.7;
-  const maxTokens =
-    typeof config.maxTokens === "number" ? config.maxTokens : 1000;
+  const aiConfig = readAiConfig(config);
   const variables = getAvailableVariables(nodeId);
-  const updateConfig = (key: string, value: unknown) =>
-    updateNodeConfig(nodeId, { [key]: value });
-  const handleKeyChange = (value: string) => {
-    setOpenAiApiKey(value);
+  const resolvedPrompt = resolvedConfig.prompt;
+  const resolvedInstructions = resolvedConfig.instructions ?? "";
+  const unresolvedReferences = findUnresolvedReferences(
+    `${resolvedPrompt}\n${resolvedInstructions}`,
+    variables.map((variable) => variable.key),
+  );
+
+  const updateConfig = (patch: Record<string, unknown>) => {
+    updateNodeConfig(nodeId, patch);
+    setTestResult(null);
   };
 
+  const lastExecution = findLastNodeExecution(
+    [execution, ...executionHistory],
+    nodeId,
+  );
+  const previewResult = testResult ?? toAiResult(lastExecution?.output);
+  const lastRunAt = lastExecution?.completedAt
+    ? new Date(lastExecution.completedAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : undefined;
+
+  const blockedReason = !resolvedPrompt.trim()
+    ? "Add a prompt before running a test."
+    : unresolvedReferences.length > 0
+      ? "Some placeholders are not connected to an upstream node yet."
+      : undefined;
+
   return (
-    <div className="space-y-6">
-      <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-3">
-        <div className="flex gap-2">
-          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-violet-300" />
-          <div>
-            <p className="text-xs font-medium text-violet-100">
-              OpenAI personal key
-            </p>
-            <p className="mt-1 text-[10px] leading-4 text-zinc-400">
-              Used only in this browser session. It is never saved in the
-              workflow, local storage, or exported JSON.
-            </p>
-          </div>
+    <div className="space-y-7">
+      <AiProviderSection
+        providerId={aiConfig.providerId}
+        apiStyle={aiConfig.apiStyle}
+        baseUrl={aiConfig.baseUrl ?? ""}
+        onChange={(patch) => updateConfig(patch)}
+      />
+
+      <section className="space-y-4">
+        <div>
+          <p className="text-xs font-medium text-zinc-300">Prompt</p>
+
+          <p className="mt-1 text-[10px] leading-4 text-zinc-600">
+            Type {"{{"} to insert a variable from an upstream node.
+          </p>
         </div>
 
-        <label htmlFor="openai-api-key" className="sr-only">
-          OpenAI API key
-        </label>
-        <div className="mt-3 flex overflow-hidden rounded-lg border border-zinc-700 bg-zinc-950 focus-within:border-violet-400">
-          <KeyRound className="m-2.5 h-4 w-4 shrink-0 text-zinc-500" />
-          <input
-            id="openai-api-key"
-            type={showKey ? "text" : "password"}
-            value={apiKey}
-            onChange={(event) => handleKeyChange(event.target.value)}
-            placeholder="sk-..."
-            autoComplete="off"
-            spellCheck={false}
-            className="min-w-0 flex-1 bg-transparent py-2.5 text-xs text-zinc-200 outline-none placeholder:text-zinc-700"
-          />
-          <button
-            type="button"
-            onClick={() => setShowKey((current) => !current)}
-            aria-label={showKey ? "Hide API key" : "Show API key"}
-            className="px-2 text-zinc-500 transition hover:text-zinc-200"
+        <PromptLibrary
+          onApplyTemplate={(template) =>
+            updateConfig({
+              prompt: template.prompt,
+              ...(template.instructions
+                ? { instructions: template.instructions }
+                : {}),
+              ...(template.responseFormat
+                ? { responseFormat: template.responseFormat }
+                : {}),
+              ...(template.jsonSchema ? { jsonSchema: template.jsonSchema } : {}),
+            })
+          }
+          onApplyInstructions={(preset) =>
+            updateConfig({ instructions: preset.instructions })
+          }
+        />
+
+        <div>
+          <label
+            htmlFor="ai-prompt"
+            className="mb-2 block text-[11px] font-medium text-zinc-400"
           >
-            {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
+            Prompt
+          </label>
+
+          <VariableInput
+            id="ai-prompt"
+            value={aiConfig.prompt}
+            variables={variables}
+            onChange={(value) => updateConfig({ prompt: value })}
+            placeholder="Ask the model to summarize, classify, or generate…"
+            rows={7}
+          />
         </div>
-        <p className={`mt-2 text-[10px] ${apiKey ? "text-emerald-400" : "text-zinc-600"}`}>
-          {apiKey ? "Key ready for this session" : "Add a key to run this node"}
-        </p>
-      </div>
 
-      <div>
-        <label htmlFor="ai-prompt" className="mb-2 block text-xs font-medium text-zinc-300">Prompt</label>
-        <VariableInput id="ai-prompt" value={prompt} variables={variables} onChange={(value) => updateConfig("prompt", value)} placeholder="Ask the model to summarize, classify, or generate…" rows={7} />
-        <p className="mt-2 text-[10px] leading-4 text-zinc-600">Use the variable picker to include data from connected upstream nodes.</p>
-      </div>
+        <div>
+          <label
+            htmlFor="ai-instructions"
+            className="mb-2 block text-[11px] font-medium text-zinc-400"
+          >
+            System instructions{" "}
+            <span className="font-normal text-zinc-600">(optional)</span>
+          </label>
 
-      <div>
-        <label htmlFor="ai-instructions" className="mb-2 block text-xs font-medium text-zinc-300">System instructions <span className="font-normal text-zinc-600">(optional)</span></label>
-        <VariableInput id="ai-instructions" value={instructions} variables={variables} onChange={(value) => updateConfig("instructions", value)} placeholder="You are a concise workflow assistant…" rows={3} />
-      </div>
+          <VariableInput
+            id="ai-instructions"
+            value={aiConfig.instructions ?? ""}
+            variables={variables}
+            onChange={(value) => updateConfig({ instructions: value })}
+            placeholder="You are a concise workflow assistant…"
+            rows={3}
+          />
+        </div>
+      </section>
 
-      <div>
-        <label htmlFor="ai-model" className="mb-2 block text-xs font-medium text-zinc-300">Model</label>
-        <select id="ai-model" value={model} onChange={(event) => updateConfig("model", event.target.value)} className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-xs text-zinc-200 outline-none focus:border-zinc-600">
-          <option value="gpt-4o-mini">GPT-4o mini — fast and economical</option>
-          <option value="gpt-4o">GPT-4o — stronger general quality</option>
-          <option value="gpt-4.1-mini">GPT-4.1 mini — balanced</option>
-        </select>
-      </div>
+      <AiResponseFormatSection
+        format={aiConfig.responseFormat}
+        schemaText={aiConfig.jsonSchema ?? ""}
+        providerId={aiConfig.providerId}
+        model={aiConfig.model}
+        onFormatChange={(responseFormat: AiResponseFormat) =>
+          updateConfig({ responseFormat })
+        }
+        onSchemaChange={(value) => updateConfig({ jsonSchema: value })}
+      />
 
-      <div>
-        <div className="mb-2 flex items-center justify-between"><label htmlFor="ai-temperature" className="text-xs font-medium text-zinc-300">Temperature</label><span className="text-[10px] text-zinc-500">{temperature.toFixed(1)}</span></div>
-        <input id="ai-temperature" type="range" min={0} max={2} step={0.1} value={temperature} onChange={(event) => updateConfig("temperature", Number(event.target.value))} className="w-full accent-violet-400" />
-        <div className="mt-1 flex justify-between text-[9px] text-zinc-700"><span>Consistent</span><span>Creative</span></div>
-      </div>
+      <AiModelSection
+        providerId={aiConfig.providerId}
+        model={aiConfig.model}
+        temperature={aiConfig.temperature}
+        maxTokens={aiConfig.maxTokens}
+        stream={aiConfig.stream}
+        onChange={(patch) => updateConfig(patch)}
+      />
 
-      <div>
-        <label htmlFor="ai-max-tokens" className="mb-2 block text-xs font-medium text-zinc-300">Maximum output tokens</label>
-        <input id="ai-max-tokens" type="number" min={1} max={100000} value={maxTokens} onChange={(event) => updateConfig("maxTokens", Number(event.target.value))} className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-xs text-zinc-200 outline-none focus:border-zinc-600" />
-      </div>
+      <AiUsagePanel
+        providerId={resolvedConfig.providerId}
+        model={resolvedConfig.model}
+        prompt={resolvedPrompt}
+        instructions={resolvedInstructions}
+        maxTokens={resolvedConfig.maxTokens}
+      />
+
+      <AiPreviewPanels
+        resolvedPrompt={resolvedPrompt}
+        resolvedInstructions={resolvedInstructions}
+        requestPreview={JSON.stringify(
+          buildRequestPreview(resolvedConfig, resolvedInstructions),
+          null,
+          2,
+        )}
+        lastResult={previewResult}
+        lastRunAt={lastRunAt}
+        unresolvedReferences={unresolvedReferences}
+        isRunning={Boolean(streamingText)}
+        streamingText={streamingText}
+      />
+
+      <AiTestRun
+        config={resolvedConfig}
+        blockedReason={blockedReason}
+        onResult={setTestResult}
+        onStreamingChange={setStreamingText}
+      />
     </div>
   );
+}
+
+/**
+ * Build the variable context from every recorded successful node
+ * output, newest run first.
+ */
+function createPreviewContext(
+  workflow: Workflow | null,
+  runs: (WorkflowExecution | null)[],
+): VariableContext {
+  if (!workflow) {
+    return {};
+  }
+
+  const outputs = new Map<string, Record<string, unknown>>();
+
+  for (const run of runs) {
+    if (!run) {
+      continue;
+    }
+
+    for (const nodeExecution of run.nodes) {
+      if (nodeExecution.status === "success" && nodeExecution.output) {
+        outputs.set(nodeExecution.nodeId, nodeExecution.output);
+      }
+    }
+  }
+
+  return createVariableContext(workflow.nodes, outputs);
+}
+
+function findLastNodeExecution(
+  runs: (WorkflowExecution | null)[],
+  nodeId: string,
+): NodeExecution | undefined {
+  for (const run of runs) {
+    const match = run?.nodes.find(
+      (item) => item.nodeId === nodeId && item.output,
+    );
+
+    if (match) {
+      return match;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Reuse a recorded node output as a preview result.
+ */
+function toAiResult(
+  output: Record<string, unknown> | undefined,
+): AiRunResult | null {
+  if (!output || typeof output.response !== "string") {
+    return null;
+  }
+
+  return output as unknown as AiRunResult;
+}
+
+function buildRequestPreview(
+  config: AiPromptConfig,
+  instructions: string,
+): Record<string, unknown> {
+  return {
+    provider: config.providerId,
+    apiStyle: config.apiStyle,
+    model: config.model,
+    responseFormat: config.responseFormat,
+    temperature: config.temperature,
+    max_output_tokens: config.maxTokens,
+    instructions: instructions || undefined,
+  };
 }

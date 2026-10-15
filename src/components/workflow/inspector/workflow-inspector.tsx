@@ -8,6 +8,12 @@ import { AIPromptInspector } from "./ai-prompt-inspector";
 import { ManualTriggerInspector } from "./manual-trigger-inspector";
 import { HTTPRequestInspector } from "./http-request-inspector";
 import { ConditionInspector } from "./condition-inspector";
+import { DelayInspector } from "./delay-inspector";
+import { JsonParserInspector } from "./json-parser-inspector";
+import { LoopInspector } from "./loop-inspector";
+import { OutputInspector } from "./output-inspector";
+import { TransformInspector } from "./transform-inspector";
+import { WebhookTriggerInspector } from "./webhook-trigger-inspector";
 
 interface WorkflowInspectorProps {
   className?: string;
@@ -99,20 +105,51 @@ export function WorkflowInspector({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
         {node.type === "manual-trigger" && (
-          <ManualTriggerInspector nodeId={node.id} />
+          <ManualTriggerInspector key={node.id} nodeId={node.id} />
         )}
 
-        {node.type === "ai-prompt" && <AIPromptInspector nodeId={node.id} />}
+        {node.type === "webhook-trigger" && (
+          <WebhookTriggerInspector key={node.id} nodeId={node.id} />
+        )}
+
+        {node.type === "ai-prompt" && (
+          <AIPromptInspector key={node.id} nodeId={node.id} />
+        )}
 
         {node.type === "http-request" && (
-          <HTTPRequestInspector nodeId={node.id} />
+          <HTTPRequestInspector key={node.id} nodeId={node.id} />
         )}
 
-        {node.type === "condition" && <ConditionInspector nodeId={node.id} />}
+        {node.type === "condition" && (
+          <ConditionInspector key={node.id} nodeId={node.id} />
+        )}
 
-        {!["manual-trigger", "ai-prompt", "http-request", "condition"].includes(
-          node.type,
-        ) && (
+        {node.type === "transform" && (
+          <TransformInspector key={node.id} nodeId={node.id} />
+        )}
+
+        {node.type === "json-parser" && (
+          <JsonParserInspector key={node.id} nodeId={node.id} />
+        )}
+
+        {node.type === "loop" && <LoopInspector key={node.id} nodeId={node.id} />}
+
+        {node.type === "delay" && <DelayInspector key={node.id} nodeId={node.id} />}
+
+        {node.type === "output" && <OutputInspector key={node.id} nodeId={node.id} />}
+
+        {![
+          "manual-trigger",
+          "webhook-trigger",
+          "ai-prompt",
+          "http-request",
+          "condition",
+          "transform",
+          "json-parser",
+          "loop",
+          "delay",
+          "output",
+        ].includes(node.type) && (
           <p className="text-xs text-zinc-600">
             Configuration for this node is coming soon.
           </p>

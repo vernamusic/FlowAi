@@ -13,7 +13,11 @@ import {
   X,
 } from "lucide-react";
 
-import type { NodeExecutionStatus, WorkflowNodeData } from "@/types/workflow";
+import type {
+  NodeExecutionStatus,
+  NodeType,
+  WorkflowNodeData,
+} from "@/types/workflow";
 
 const icons = {
   trigger: Play,
@@ -24,10 +28,11 @@ const icons = {
 
 export function WorkflowNode({ data, selected }: NodeProps) {
   const nodeData = data as unknown as WorkflowNodeData & {
+    type?: NodeType;
     executionStatus?: NodeExecutionStatus;
   };
 
-  const Icon = icons[nodeData.category];
+  const Icon = icons[nodeData.category] ?? Globe;
 
   const executionStatus = nodeData.executionStatus;
 
@@ -65,6 +70,14 @@ export function WorkflowNode({ data, selected }: NodeProps) {
 
   const statusText = getStatusText();
 
+  /**
+   * Only conditions branch into named outputs, and triggers start a
+   * workflow so they never accept an incoming connection.
+   */
+  const isCondition = nodeData.type === "condition";
+  const isTrigger = nodeData.category === "trigger";
+  const isLoop = nodeData.type === "loop";
+
   return (
     <div
       className={`
@@ -90,11 +103,13 @@ export function WorkflowNode({ data, selected }: NodeProps) {
     >
       {/* Target Handle */}
 
-      <Handle
-        type="target"
-        position={Position.Top}
-        className="!h-2 !w-2 !border-0 !bg-zinc-500"
-      />
+      {!isTrigger && (
+        <Handle
+          type="target"
+          position={Position.Top}
+          className="!h-2 !w-2 !border-0 !bg-zinc-500"
+        />
+      )}
 
       {/* Header */}
 
@@ -149,7 +164,7 @@ export function WorkflowNode({ data, selected }: NodeProps) {
 
       {/* Source Handle */}
 
-      {nodeData.category !== "logic" && (
+      {!isCondition && !isLoop && (
         <Handle
           type="source"
           position={Position.Bottom}
@@ -157,7 +172,33 @@ export function WorkflowNode({ data, selected }: NodeProps) {
         />
       )}
 
-      {nodeData.category === "logic" && (
+      {isLoop && (
+        <>
+          <Handle
+            id="body"
+            type="source"
+            position={Position.Bottom}
+            className="!h-2 !w-2 !border-0 !bg-zinc-500"
+          />
+
+          <Handle
+            id="after"
+            type="source"
+            position={Position.Right}
+            className="!h-2.5 !w-2.5 !border-0 !bg-violet-400"
+          />
+
+          <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[9px] font-medium text-zinc-500">
+            Body
+          </span>
+
+          <span className="absolute right-2 top-1/2 translate-y-[-150%] text-[9px] font-medium text-violet-400">
+            After
+          </span>
+        </>
+      )}
+
+      {isCondition && (
         <>
           <Handle
             id="true"

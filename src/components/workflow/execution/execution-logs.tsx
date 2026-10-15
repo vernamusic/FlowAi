@@ -209,7 +209,9 @@ export function ExecutionLogs() {
 
                       {log.details && (
                         <div className="mb-3">
-                          <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600">Request details</p>
+                          <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-zinc-600">
+                            {log.nodeId ? "Node details" : "Details"}
+                          </p>
                           <div className="relative"><pre className="max-h-32 overflow-auto rounded-lg border border-zinc-900 bg-zinc-950 p-3 pr-8 text-[10px] leading-5 text-zinc-500">{JSON.stringify(log.details, null, 2)}</pre><CopyButton value={JSON.stringify(log.details, null, 2)} /></div>
                         </div>
                       )}

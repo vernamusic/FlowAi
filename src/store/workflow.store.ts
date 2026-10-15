@@ -503,6 +503,15 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
     const variables: WorkflowVariable[] = [];
 
+    /**
+     * Nodes inside a loop body also see the current item and index.
+     */
+    const loopVariable = findNearestLoopVariable(state.workflow, nodeId);
+
+    if (loopVariable) {
+      variables.push(...loopVariable);
+    }
+
     for (const node of availableNodes) {
       const key = createVariableKey(node);
 
@@ -541,6 +550,23 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             path: "response",
             type: "string",
           });
+
+          /**
+           * Parsed values only exist when the node asks for JSON or a
+           * structured output, so the variable follows the node config.
+           */
+          if (
+            node.data.config.responseFormat === "json" ||
+            node.data.config.responseFormat === "schema"
+          ) {
+            variables.push({
+              nodeId: node.id,
+              nodeLabel: node.data.label,
+              key: `${key}.parsed`,
+              path: "parsed",
+              type: "object",
+            });
+          }
           break;
 
         case "http-request":
@@ -576,6 +602,129 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             key: `${key}.result`,
             path: "result",
             type: "boolean",
+          });
+          break;
+
+        case "webhook-trigger":
+          variables.push(
+            {
+              nodeId: node.id,
+              nodeLabel: node.data.label,
+              key: `${key}.body`,
+              path: "body",
+              type: "object",
+            },
+            {
+              nodeId: node.id,
+              nodeLabel: node.data.label,
+              key: `${key}.query`,
+              path: "query",
+              type: "object",
+            },
+            {
+              nodeId: node.id,
+              nodeLabel: node.data.label,
+              key: `${key}.method`,
+              path: "method",
+              type: "string",
+            },
+            {
+              nodeId: node.id,
+              nodeLabel: node.data.label,
+              key: `${key}.url`,
+              path: "url",
+              type: "string",
+            },
+          );
+          break;
+
+        case "transform": {
+          /**
+           * The output name is configurable, so it is read from the node
+           * config instead of being fixed per type.
+           */
+          const name =
+            typeof node.data.config.name === "string" &&
+            node.data.config.name.trim()
+              ? node.data.config.name.trim()
+              : "result";
+          const valueType =
+            typeof node.data.config.valueType === "string"
+              ? node.data.config.valueType
+              : "string";
+
+          variables.push({
+            nodeId: node.id,
+            nodeLabel: node.data.label,
+            key: `${key}.${name}`,
+            path: name,
+            type:
+              valueType === "number"
+                ? "number"
+                : valueType === "boolean"
+                  ? "boolean"
+                  : valueType === "object" || valueType === "array"
+                    ? "object"
+                    : "string",
+          });
+          break;
+        }
+
+        case "json-parser":
+          variables.push(
+            {
+              nodeId: node.id,
+              nodeLabel: node.data.label,
+              key: `${key}.data`,
+              path: "data",
+              type: "object",
+            },
+            {
+              nodeId: node.id,
+              nodeLabel: node.data.label,
+              key: `${key}.found`,
+              path: "found",
+              type: "boolean",
+            },
+          );
+          break;
+
+        case "loop":
+          variables.push(
+            {
+              nodeId: node.id,
+              nodeLabel: node.data.label,
+              key: `${key}.count`,
+              path: "count",
+              type: "number",
+            },
+            {
+              nodeId: node.id,
+              nodeLabel: node.data.label,
+              key: `${key}.results`,
+              path: "results",
+              type: "object",
+            },
+          );
+          break;
+
+        case "delay":
+          variables.push({
+            nodeId: node.id,
+            nodeLabel: node.data.label,
+            key: `${key}.waitedMs`,
+            path: "waitedMs",
+            type: "number",
+          });
+          break;
+
+        case "output":
+          variables.push({
+            nodeId: node.id,
+            nodeLabel: node.data.label,
+            key: `${key}.message`,
+            path: "message",
+            type: "string",
           });
           break;
       }
@@ -706,6 +855,37 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
           } : state);
           break;
 
+        case "node-stream":
+          /**
+           * Progressive output so the panel can render a response while
+           * the model is still writing it.
+           */
+          set((state) => {
+            if (!state.execution) {
+              return state;
+            }
+
+            return {
+              execution: {
+                ...state.execution,
+                nodes: state.execution.nodes.map((node) =>
+                  node.nodeId === event.nodeId
+                    ? {
+                        ...node,
+                        output: {
+                          ...(node.output ?? {}),
+                          response: event.accumulated,
+                          streaming: true,
+                        },
+                      }
+                    : node,
+                ),
+              },
+            };
+          });
+
+          break;
+
         case "workflow-completed":
           set({
             execution: event.execution,
@@ -772,4 +952,81 @@ if (typeof window !== "undefined") {
       saveWorkflow(state.workflow);
     }
   });
+}
+
+/**
+ * Item variables exposed by the closest loop upstream of a node.
+ *
+ * They only exist while the node runs inside an iteration, so they are
+ * not tied to a node id and must not be nested under its output key.
+ */
+function findNearestLoopVariable(
+  workflow: Workflow,
+  nodeId: string,
+): WorkflowVariable[] | null {
+  const visited = new Set<string>();
+  const queue = workflow.edges
+    .filter((edge) => edge.target === nodeId)
+    .map((edge) => edge.source);
+
+  while (queue.length > 0) {
+    const currentNodeId = queue.shift();
+
+    if (!currentNodeId || visited.has(currentNodeId)) {
+      continue;
+    }
+
+    visited.add(currentNodeId);
+
+    const node = workflow.nodes.find((item) => item.id === currentNodeId);
+
+    if (!node) {
+      continue;
+    }
+
+    if (node.type === "loop") {
+      const itemName =
+        typeof node.data.config.itemName === "string" &&
+        node.data.config.itemName.trim()
+          ? node.data.config.itemName.trim()
+          : "item";
+      const indexName =
+        typeof node.data.config.indexName === "string" &&
+        node.data.config.indexName.trim()
+          ? node.data.config.indexName.trim()
+          : "index";
+
+      return [
+        {
+          nodeId: node.id,
+          nodeLabel: node.data.label,
+          key: itemName,
+          path: itemName,
+          type: "string",
+        },
+        {
+          nodeId: node.id,
+          nodeLabel: node.data.label,
+          key: indexName,
+          path: indexName,
+          type: "number",
+        },
+        {
+          nodeId: node.id,
+          nodeLabel: node.data.label,
+          key: `${itemName}Count`,
+          path: `${itemName}Count`,
+          type: "number",
+        },
+      ];
+    }
+
+    for (const edge of workflow.edges) {
+      if (edge.target === node.id) {
+        queue.push(edge.source);
+      }
+    }
+  }
+
+  return null;
 }
