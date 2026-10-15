@@ -51,6 +51,34 @@ async function useTemplate(page: Page) {
   await dismissTour(page);
 }
 
+/**
+ * Writes a workflow straight to storage, for the cases a template can't
+ * produce: an exact shape, or a run that takes a known amount of time.
+ */
+async function seedWorkflow(page: Page, workflow: Record<string, unknown>) {
+  const now = new Date().toISOString();
+
+  await page.evaluate(
+    ({ key, envelope }) => window.localStorage.setItem(key, JSON.stringify(envelope)),
+    {
+      key: storageKey,
+      envelope: {
+        version: 2,
+        savedAt: now,
+        workflows: [
+          {
+            description: "",
+            status: "draft",
+            createdAt: now,
+            updatedAt: now,
+            ...workflow,
+          },
+        ],
+      },
+    },
+  );
+}
+
 test.beforeEach(async ({ page }) => {
   /**
    * Cleared once per test, not on every navigation, so a reload keeps
@@ -365,6 +393,126 @@ test.describe("variables panel", () => {
   });
 });
 
+test.describe("graph edges", () => {
+  test("draws an arrowhead on every connection", async ({ page }) => {
+    await useTemplate(page);
+
+    const edges = page.locator(".react-flow__edge");
+    const count = await edges.count();
+
+    expect(count).toBeGreaterThan(0);
+
+    /**
+     * `marker-end` is how direction becomes visible, so an edge without
+     * it points nowhere.
+     */
+    for (let index = 0; index < count; index += 1) {
+      await expect(edges.nth(index).locator(".react-flow__edge-path")).toHaveAttribute(
+        "marker-end",
+        /url\(/,
+      );
+    }
+  });
+
+  test("labels the branches of a condition", async ({ page }) => {
+    await page.goto("/templates");
+    await page
+      .getByRole("button", { name: /use this template/i })
+      .nth(2)
+      .click();
+    await expect(page).toHaveURL(/\/workflows\/[0-9a-f-]{36}$/);
+    await dismissTour(page);
+
+    await expect(page.getByText("True", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("False", { exact: true }).first()).toBeVisible();
+
+    /**
+     * The branch colour travels from the node handle to the edge.
+     */
+    const trueEdge = page
+      .locator(".react-flow__edge")
+      .filter({ hasText: "True" })
+      .first();
+
+    await expect(trueEdge.locator(".react-flow__edge-path")).toHaveCSS(
+      "stroke",
+      "rgb(52, 211, 153)",
+    );
+  });
+
+  test("animates the edges of a running node", async ({ page }) => {
+    /**
+     * A delay keeps a node running for long enough to observe, which a
+     * template's instant nodes can't guarantee.
+     */
+    await seedWorkflow(page, {
+      id: "slow-workflow",
+      name: "Slow workflow",
+      nodes: [
+        {
+          id: "trigger-1",
+          type: "manual-trigger",
+          position: { x: 0, y: 0 },
+          data: {
+            label: "Manual Trigger",
+            description: "Start workflow manually",
+            category: "trigger",
+            config: {},
+          },
+        },
+        {
+          id: "delay-1",
+          type: "delay",
+          position: { x: 320, y: 0 },
+          data: {
+            label: "Delay",
+            description: "Wait before continuing",
+            category: "action",
+            config: { durationMs: 3000 },
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "edge-1",
+          source: "trigger-1",
+          target: "delay-1",
+        },
+      ],
+    });
+
+    await page.goto("/workflows/slow-workflow");
+    await dismissTour(page);
+
+    await page.getByRole("button", { name: "Run Workflow", exact: true }).click();
+
+    await expect(page.locator(".react-flow__edge.animated").first()).toBeVisible({
+      timeout: 5000,
+    });
+
+    await page.getByRole("button", { name: /stop|cancel/i }).first().click();
+  });
+
+  test("deletes a connection when it is selected", async ({ page }) => {
+    await useTemplate(page);
+
+    const edges = page.locator(".react-flow__edge");
+    const before = await edges.count();
+
+    /**
+     * Dispatched on the edge itself: a connection is a thin curve, and
+     * the centre of its bounding box is often empty canvas.
+     */
+    await edges.first().locator(".react-flow__edge-path").dispatchEvent("click");
+
+    await expect(edges.first()).toHaveClass(/selected/);
+
+    await page.keyboard.press("Delete");
+
+    await expect(edges).toHaveCount(before - 1);
+  });
+});
+
 test.describe("theme", () => {
   test("switches between light and dark and remembers the choice", async ({
     page,
@@ -410,9 +558,17 @@ test.describe("keyboard shortcuts", () => {
   test("opens with the question mark key", async ({ page }) => {
     await openWorkflowsPage(page);
 
-    await page.keyboard.press("?");
-
-    await expect(page.getByRole("dialog")).toBeVisible();
+    /**
+     * The shortcut is registered while the page hydrates, so a key
+     * pressed a moment too early is simply lost. Retrying presses it
+     * again rather than assuming the first one landed.
+     */
+    await expect
+      .poll(async () => {
+        await page.keyboard.press("?");
+        return page.getByRole("dialog").isVisible();
+      })
+      .toBe(true);
   });
 
   test("duplicates and removes a node with the keyboard", async ({ page }) => {

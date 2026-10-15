@@ -63,6 +63,8 @@ export function WorkflowCanvas() {
   );
 
   const selectNode = useWorkflowStore((state) => state.selectNode);
+  const selectedEdgeId = useWorkflowStore((state) => state.selectedEdgeId);
+  const selectEdge = useWorkflowStore((state) => state.selectEdge);
 
   const { screenToFlowPosition } = useReactFlow();
 
@@ -127,10 +129,28 @@ export function WorkflowCanvas() {
 
   /**
    * Edges
+   *
+   * An edge looks at the node it starts from: it takes that node's
+   * execution status (so a live edge animates while its source works),
+   * plus the selection and hover state we track locally.
    */
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
+
   const edges: Edge[] = useMemo(() => {
-    return workflow?.edges.map(workflowEdgeToReactFlowEdge) ?? [];
-  }, [workflow]);
+    const statuses = new Map(
+      (execution?.nodes ?? []).map((item) => [item.nodeId, item.status]),
+    );
+
+    return (
+      workflow?.edges.map((edge) =>
+        workflowEdgeToReactFlowEdge(edge, {
+          sourceStatus: statuses.get(edge.source),
+          isSelected: selectedEdgeId === edge.id,
+          isHovered: hoveredEdgeId === edge.id,
+        }),
+      ) ?? []
+    );
+  }, [workflow, execution, selectedEdgeId, hoveredEdgeId]);
 
   /**
    * Node changes
@@ -277,9 +297,23 @@ export function WorkflowCanvas() {
   );
 
   /**
-   * Deselect node
+   * Select edge
+   *
+   * Clicking a connection selects it instead of the node underneath,
+   * which is what makes the Delete key work on edges.
+   */
+  const handleEdgeClick = useCallback(
+    (_event: React.MouseEvent, edge: Edge) => {
+      selectEdge(edge.id);
+    },
+    [selectEdge],
+  );
+
+  /**
+   * Deselect
    */
   const handlePaneClick = useCallback(() => {
+    setHoveredEdgeId(null);
     selectNode(null);
   }, [selectNode]);
 
@@ -292,6 +326,9 @@ export function WorkflowCanvas() {
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onNodeClick={handleNodeClick}
+        onEdgeClick={handleEdgeClick}
+        onEdgeMouseEnter={(_event, edge) => setHoveredEdgeId(edge.id)}
+        onEdgeMouseLeave={() => setHoveredEdgeId(null)}
         onPaneClick={handlePaneClick}
         onDragOver={handleDragOver}
         onDrop={handleDrop}

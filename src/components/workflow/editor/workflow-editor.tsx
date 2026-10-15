@@ -25,7 +25,9 @@ export function WorkflowEditor({ workflowId }: WorkflowEditorProps) {
   const loadWorkflow = useWorkflowStore((state) => state.loadWorkflow);
   const resetWorkflow = useWorkflowStore((state) => state.resetWorkflow);
   const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId);
+  const selectedEdgeId = useWorkflowStore((state) => state.selectedEdgeId);
   const removeNode = useWorkflowStore((state) => state.removeNode);
+  const removeEdge = useWorkflowStore((state) => state.removeEdge);
   const duplicateNode = useWorkflowStore((state) => state.duplicateNode);
   const undo = useWorkflowStore((state) => state.undo);
   const redo = useWorkflowStore((state) => state.redo);
@@ -73,9 +75,21 @@ export function WorkflowEditor({ workflowId }: WorkflowEditorProps) {
       } else if (modifier && key === "d" && selectedNodeId) {
         event.preventDefault();
         duplicateNode(selectedNodeId);
-      } else if ((event.key === "Delete" || event.key === "Backspace") && selectedNodeId) {
+      } else if (
+        (event.key === "Delete" || event.key === "Backspace") &&
+        (selectedNodeId || selectedEdgeId)
+      ) {
         event.preventDefault();
-        removeNode(selectedNodeId);
+
+        /**
+         * Whatever is selected goes, so the key never does something
+         * the user cannot see.
+         */
+        if (selectedEdgeId) {
+          removeEdge(selectedEdgeId);
+        } else if (selectedNodeId) {
+          removeNode(selectedNodeId);
+        }
       } else if (event.key === "Escape") {
         selectNode(null);
       }
@@ -85,10 +99,12 @@ export function WorkflowEditor({ workflowId }: WorkflowEditorProps) {
   }, [
     duplicateNode,
     redo,
+    removeEdge,
     removeNode,
     runWorkflow,
     saveCurrentWorkflow,
     selectNode,
+    selectedEdgeId,
     selectedNodeId,
     undo,
   ]);

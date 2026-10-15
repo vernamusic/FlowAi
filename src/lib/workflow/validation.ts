@@ -1,9 +1,20 @@
 import type { NodeType, Workflow, WorkflowEdge, WorkflowNode } from "@/types/workflow";
 import { isTriggerNode } from "@/types/workflow";
+import { CONDITION_HANDLES, LOOP_HANDLES } from "@/constants/edges";
 import { getAiProvider, normalizeBaseUrl } from "./execution/ai/providers";
 import { parseJsonSchema } from "./execution/ai/response-format";
 import { auditWorkflowVariables } from "./variables/variable-audit";
 import { MAX_DELAY_MS, MIN_DELAY_MS } from "./execution/nodes/delay";
+
+/**
+ * Whether a connection is leaving through one of these named outputs.
+ *
+ * A missing handle means the default output, which only exists on nodes
+ * that have a single one.
+ */
+function isHandleOf(handle: string | undefined, handles: readonly string[]) {
+  return handle !== undefined && handles.includes(handle);
+}
 
 export interface WorkflowValidationIssue {
   code: string;
@@ -176,8 +187,8 @@ export function validateConnection(workflow: Workflow, edge: WorkflowEdge): Vali
   if (!source || !target) issues.push({ code: "missing-node", message: "Both ends of a connection must exist." });
   if (edge.source === edge.target) issues.push({ code: "self-connection", message: "A node cannot connect to itself." });
   if (target && isTriggerNode(target.type)) issues.push({ code: "trigger-input", nodeId: target.id, message: `A ${target.data.label} cannot have an incoming connection.` });
-  if (source?.type === "condition" && edge.sourceHandle !== "true" && edge.sourceHandle !== "false") issues.push({ code: "condition-handle", nodeId: source.id, message: "Conditions must use their True or False branch." });
-  if (source?.type === "loop" && edge.sourceHandle !== "body" && edge.sourceHandle !== "after") issues.push({ code: "loop-handle", nodeId: source.id, message: "Loops must use their Body handle to repeat, or the After handle to continue once." });
+  if (source?.type === "condition" && !isHandleOf(edge.sourceHandle, CONDITION_HANDLES)) issues.push({ code: "condition-handle", nodeId: source.id, message: "Conditions must use their True or False branch." });
+  if (source?.type === "loop" && !isHandleOf(edge.sourceHandle, LOOP_HANDLES)) issues.push({ code: "loop-handle", nodeId: source.id, message: "Loops must use their Body handle to repeat, or the After handle to continue once." });
   if (source && source.type !== "condition" && source.type !== "loop" && edge.sourceHandle) issues.push({ code: "unexpected-handle", nodeId: source.id, message: "This node does not have named output branches." });
   if (workflow.edges.some((item) => item.source === edge.source && item.target === edge.target && item.sourceHandle === edge.sourceHandle)) issues.push({ code: "duplicate-edge", message: "That connection already exists." });
   if (source?.type === "condition" && workflow.edges.some((item) => item.source === edge.source && item.sourceHandle === edge.sourceHandle)) issues.push({ code: "duplicate-branch", nodeId: source.id, message: `The ${edge.sourceHandle === "true" ? "True" : "False"} branch is already connected.` });

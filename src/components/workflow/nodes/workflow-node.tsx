@@ -178,7 +178,7 @@ export function WorkflowNode({ data, selected }: NodeProps) {
             id="body"
             type="source"
             position={Position.Bottom}
-            className="!h-2 !w-2 !border-0 !bg-zinc-500"
+            className="!h-2.5 !w-2.5 !border-0 !bg-violet-400"
           />
 
           <Handle
@@ -188,7 +188,7 @@ export function WorkflowNode({ data, selected }: NodeProps) {
             className="!h-2.5 !w-2.5 !border-0 !bg-violet-400"
           />
 
-          <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[9px] font-medium text-zinc-500">
+          <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[9px] font-medium text-violet-400">
             Body
           </span>
 

@@ -72,6 +72,8 @@ interface WorkflowState {
   /**
    * Edge
    */
+  selectedEdgeId: string | null;
+  selectEdge: (edgeId: string | null) => void;
   addEdge: (edge: WorkflowEdge) => ValidationResult;
   removeEdge: (edgeId: string) => void;
 
@@ -103,6 +105,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   executionHistory: [],
   activeExecutionController: null,
   selectedNodeId: null,
+  selectedEdgeId: null,
 
   editorIssues: [],
   historyPast: [],
@@ -344,6 +347,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   selectNode: (nodeId) =>
     set({
       selectedNodeId: nodeId,
+
+      /**
+       * Only one thing can be selected at a time, so the Delete key
+       * always has an unambiguous target.
+       */
+      selectedEdgeId: null,
+    }),
+
+  selectEdge: (edgeId) =>
+    set({
+      selectedEdgeId: edgeId,
+      selectedNodeId: null,
     }),
 
   // --------------------------------------------------
@@ -381,6 +396,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
           updatedAt: new Date().toISOString(),
         },
+        selectedEdgeId:
+          state.selectedEdgeId === edgeId ? null : state.selectedEdgeId,
         historyPast: [...state.historyPast.slice(-49), state.workflow],
         historyFuture: [],
       };
