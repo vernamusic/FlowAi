@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import "@xyflow/react/dist/style.css";
 
 import { NodeLibrary } from "@/components/workflow/sidebar/node-library";
+import { Walkthrough } from "@/components/workflow/onboarding/walkthrough";
 import { useWorkflowStore } from "@/store/workflow.store";
 import { WorkflowCanvas } from "./workflow-canvas";
 import { WorkflowInspector } from "@/components/workflow/inspector/workflow-inspector";
@@ -25,12 +26,19 @@ export function WorkflowEditor({ workflowId }: WorkflowEditorProps) {
   const duplicateNode = useWorkflowStore((state) => state.duplicateNode);
   const undo = useWorkflowStore((state) => state.undo);
   const redo = useWorkflowStore((state) => state.redo);
+  const nodeCount = useWorkflowStore((state) => state.workflow?.nodes.length ?? 0);
 
   useEffect(() => {
     if (!loadWorkflow(workflowId)) {
       resetWorkflow();
     }
   }, [loadWorkflow, resetWorkflow, workflowId]);
+
+  /**
+   * The tour introduces the editor itself, so it only appears while the
+   * workflow is still empty.
+   */
+  const isFirstRun = nodeCount <= 1;
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -57,6 +65,8 @@ export function WorkflowEditor({ workflowId }: WorkflowEditorProps) {
 
   return (
     <ReactFlowProvider>
+      <Walkthrough autoStart={isFirstRun} />
+
       <div className="relative flex h-full min-h-0 w-full overflow-hidden">
         {/* Node Library */}
         <NodeLibrary className="hidden lg:block" />

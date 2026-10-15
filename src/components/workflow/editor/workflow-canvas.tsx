@@ -20,6 +20,8 @@ import { AlertCircle, MousePointer2 } from "lucide-react";
 
 import { ExecutionLogs } from "@/components/workflow/execution/execution-logs";
 import { ExecutionPanel } from "@/components/workflow/execution/execution-panel";
+import { WalkthroughTrigger } from "@/components/workflow/onboarding/walkthrough";
+import { TemplateGallery } from "@/components/workflow/templates/template-gallery";
 import { WorkflowNode } from "@/components/workflow/nodes/workflow-node";
 
 import { createWorkflowNode } from "@/lib/workflow/create-node";
@@ -328,12 +330,31 @@ export function WorkflowCanvas() {
 
       {!workflow?.nodes.length && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-6">
-          <div className="max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950/95 p-6 text-center shadow-2xl backdrop-blur">
-            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
-              <MousePointer2 className="h-5 w-5" />
+          <div className="pointer-events-auto w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950/95 p-5 text-left shadow-2xl backdrop-blur">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
+                <MousePointer2 className="h-5 w-5" />
+              </div>
+
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-white">Empty canvas</h2>
+                <p className="mt-0.5 text-[11px] leading-4 text-zinc-500">
+                  Add a template, or drag a trigger from the node library.
+                </p>
+              </div>
             </div>
-            <h2 className="mt-4 text-sm font-semibold text-white">Start with a trigger</h2>
-            <p className="mt-2 text-xs leading-5 text-zinc-500">Drag a Manual Trigger from the node library, then connect the steps you want to run.</p>
+
+            <div className="mt-4">
+              <TemplateGallery variant="compact" limit={3} title="Start from a template" />
+            </div>
+
+            <div className="mt-4 flex items-center justify-between gap-3 border-t border-zinc-800 pt-3">
+              <p className="text-[10px] leading-4 text-zinc-600">
+                New here? The tour takes about a minute.
+              </p>
+
+              <WalkthroughTrigger className="shrink-0 rounded-lg border border-zinc-800 px-2.5 py-1.5 text-[11px] text-zinc-300 transition hover:bg-zinc-800 hover:text-white" />
+            </div>
           </div>
         </div>
       )}

@@ -259,6 +259,93 @@ export function getNodeOutputFields(node: WorkflowNode): NodeOutputField[] {
 }
 
 /**
+ * Every node reachable downstream of the given start nodes.
+ */
+function collectDescendantIds(
+  workflow: Workflow,
+  startNodeIds: string[],
+): Set<string> {
+  const found = new Set<string>();
+  const queue: string[] = [];
+
+  for (const startNodeId of startNodeIds) {
+    if (!found.has(startNodeId)) {
+      found.add(startNodeId);
+      queue.push(startNodeId);
+    }
+  }
+
+  while (queue.length > 0) {
+    const currentNodeId = queue.shift();
+
+    if (!currentNodeId) {
+      continue;
+    }
+
+    for (const edge of workflow.edges) {
+      if (edge.source !== currentNodeId || found.has(edge.target)) {
+        continue;
+      }
+
+      found.add(edge.target);
+      queue.push(edge.target);
+    }
+  }
+
+  return found;
+}
+
+/**
+ * Body nodes a node may read after a loop finished.
+ *
+ * The engine keeps the output of the last iteration, so anything on the
+ * loop's After branch, and everything downstream of it, can still read
+ * the nodes that ran inside the body.
+ */
+export function getExposedLoopBodyIds(
+  workflow: Workflow,
+  nodeId: string,
+): Set<string> {
+  const exposed = new Set<string>();
+
+  for (const loopNode of workflow.nodes) {
+    if (loopNode.type !== "loop") {
+      continue;
+    }
+
+    const bodyIds = collectDescendantIds(
+      workflow,
+      workflow.edges
+        .filter(
+          (edge) =>
+            edge.source === loopNode.id && edge.sourceHandle === "body",
+        )
+        .map((edge) => edge.target),
+    );
+
+    const afterIds = collectDescendantIds(
+      workflow,
+      workflow.edges
+        .filter(
+          (edge) =>
+            edge.source === loopNode.id && edge.sourceHandle === "after",
+        )
+        .map((edge) => edge.target),
+    );
+
+    if (!afterIds.has(nodeId)) {
+      continue;
+    }
+
+    for (const bodyId of bodyIds) {
+      exposed.add(bodyId);
+    }
+  }
+
+  return exposed;
+}
+
+/**
  * A variable together with the node that produces it.
  */
 export interface WorkflowVariableEntry extends WorkflowVariable {
@@ -300,6 +387,7 @@ export function getAvailableVariables(
   nodeId: string,
 ): WorkflowVariable[] {
   const ancestors = collectAncestorIds(workflow, nodeId);
+  const exposedBodyIds = getExposedLoopBodyIds(workflow, nodeId);
 
   const variables: WorkflowVariable[] = [...getLoopVariables(workflow, nodeId)];
 
@@ -307,12 +395,15 @@ export function getAvailableVariables(
    * Anything connected above the node, ordered by canvas position so the
    * picker stays predictable regardless of connection order.
    */
-  const upstream = workflow.nodes
-    .filter((node) => ancestors.has(node.id) && node.id !== nodeId)
-    .sort(
-      (a, b) =>
-        workflow.nodes.indexOf(a) - workflow.nodes.indexOf(b),
-    );
+  const upstream = workflow.nodes.filter(
+    (node) =>
+      node.id !== nodeId &&
+      (ancestors.has(node.id) || exposedBodyIds.has(node.id)),
+  );
+
+  upstream.sort(
+    (a, b) => workflow.nodes.indexOf(a) - workflow.nodes.indexOf(b),
+  );
 
   for (const node of upstream) {
     const key = createVariableKey(node);

@@ -5,6 +5,7 @@ import { Repeat } from "lucide-react";
 import { useWorkflowStore } from "@/store/workflow.store";
 import { VariableInput } from "../variables/variable-input";
 import { ResolvedPreview } from "../variables/resolved-preview";
+import { HelpTip } from "@/components/ui/help-tip";
 
 import {
   MAX_ITERATIONS,
@@ -58,12 +59,20 @@ export function LoopInspector({ nodeId }: LoopInspectorProps) {
 
       <section className="space-y-4">
         <div>
+          <div className="mb-2 flex items-center justify-between">
           <label
             htmlFor="loop-items"
-            className="mb-2 block text-[11px] font-medium text-zinc-400"
+            className="text-[11px] font-medium text-zinc-400"
           >
             Items
           </label>
+
+          <HelpTip label="About loop items">
+            Connect a JSON Parser to this field to loop over real data. You can
+            also paste a JSON array, or a number such as <code>5</code> to
+            repeat five times.
+          </HelpTip>
+        </div>
 
           <VariableInput
             id="loop-items"

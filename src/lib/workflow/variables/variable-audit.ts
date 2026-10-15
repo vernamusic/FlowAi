@@ -5,6 +5,7 @@ import { parseVariable, parseVariables } from "./variable-parser";
 import {
   collectAncestorIds,
   findNearestLoopNode,
+  getExposedLoopBodyIds,
   getNodeOutputFields,
   readLoopVariableNames,
 } from "./variable-scope";
@@ -136,6 +137,7 @@ export function auditWorkflowVariables(workflow: Workflow): VariableIssue[] {
     }
 
     const ancestors = collectAncestorIds(workflow, node.id);
+    const exposedBodyIds = getExposedLoopBodyIds(workflow, node.id);
     const loopNode = findNearestLoopNode(workflow, node.id);
     const loopNames = loopNode ? readLoopVariableNames(loopNode) : null;
 
@@ -145,7 +147,7 @@ export function auditWorkflowVariables(workflow: Workflow): VariableIssue[] {
     const reachableFields = new Map<string, boolean>();
 
     for (const candidate of workflow.nodes) {
-      if (!ancestors.has(candidate.id)) {
+      if (!ancestors.has(candidate.id) && !exposedBodyIds.has(candidate.id)) {
         continue;
       }
 
@@ -190,7 +192,7 @@ export function auditWorkflowVariables(workflow: Workflow): VariableIssue[] {
         continue;
       }
 
-      if (!ancestors.has(ownerNode.id)) {
+      if (!ancestors.has(ownerNode.id) && !exposedBodyIds.has(ownerNode.id)) {
         issues.push({
           code: "not-connected",
           message: `${reference.nodeLabel} uses ${reference.raw}, but ${ownerNode.data.label} is not connected above it.`,

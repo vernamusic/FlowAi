@@ -15,6 +15,7 @@ import {
   getAiProvider,
   normalizeBaseUrl,
 } from "@/lib/workflow/execution/ai/providers";
+import { HelpTip } from "@/components/ui/help-tip";
 
 interface AiProviderSectionProps {
   providerId: string;
@@ -67,12 +68,20 @@ export function AiProviderSection({
       </div>
 
       <div>
-        <label
-          htmlFor="ai-provider"
-          className="mb-2 block text-[11px] font-medium text-zinc-400"
-        >
-          Provider
-        </label>
+        <div className="flex items-center justify-between gap-2">
+          <label
+            htmlFor="ai-provider"
+            className="mb-2 block text-[11px] font-medium text-zinc-400"
+          >
+            Provider
+          </label>
+
+          <HelpTip label="About providers" align="right">
+            FlowAI speaks the OpenAI protocol, so any compatible host works.
+            Keys stay in this browser session and are never written into the
+            workflow or an export.
+          </HelpTip>
+        </div>
 
         <select
           id="ai-provider"

@@ -3,6 +3,7 @@
 import { useWorkflowStore } from "@/store/workflow.store";
 import { VariableInput } from "../variables/variable-input";
 import { ResolvedPreview } from "../variables/resolved-preview";
+import { HelpTip } from "@/components/ui/help-tip";
 
 import {
   getByPath,
@@ -86,12 +87,20 @@ export function JsonParserInspector({ nodeId }: JsonParserInspectorProps) {
         </div>
 
         <div>
-          <label
-            htmlFor="json-path"
-            className="mb-2 block text-[11px] font-medium text-zinc-400"
-          >
-            Path <span className="font-normal text-zinc-600">(optional)</span>
-          </label>
+          <div className="mb-2 flex items-center justify-between">
+            <label
+              htmlFor="json-path"
+              className="text-[11px] font-medium text-zinc-400"
+            >
+              Path <span className="font-normal text-zinc-600">(optional)</span>
+            </label>
+
+            <HelpTip label="About paths">
+              Dot notation with array indexes, for example{" "}
+              <code>data.items[0].id</code>. Leave it empty to keep the whole
+              payload.
+            </HelpTip>
+          </div>
 
           <input
             id="json-path"

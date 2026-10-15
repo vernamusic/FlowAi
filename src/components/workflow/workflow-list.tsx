@@ -11,6 +11,9 @@ import {
 import { useWorkflowStore } from "@/store/workflow.store";
 import type { Workflow } from "@/types/workflow";
 
+import { NewWorkflowButton } from "./new-workflow-button";
+import { TemplateGallery } from "./templates/template-gallery";
+
 export function WorkflowList() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const deleteWorkflow = useWorkflowStore((state) => state.deleteWorkflow);
@@ -39,11 +42,34 @@ export function WorkflowList() {
 
   if (workflows.length === 0) {
     return (
-      <div className="mt-8 rounded-xl border border-dashed border-zinc-800 bg-zinc-900/20 px-4 py-12 text-center sm:p-12">
-        <p className="text-sm text-zinc-500">No workflows yet.</p>
-        <p className="mt-1 text-sm text-zinc-600">
-          Create your first workflow to get started.
-        </p>
+      <div className="mt-8 space-y-8">
+        <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-900/20 px-4 py-12 text-center sm:p-12">
+          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-300">
+            <WorkflowIcon className="h-5 w-5" />
+          </div>
+
+          <p className="mt-4 text-sm text-zinc-300">No workflows yet</p>
+          <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-zinc-600">
+            Create an empty workflow, or start from a template and see how the
+            pieces fit together.
+          </p>
+
+          <div className="mt-5 flex items-center justify-center">
+            <NewWorkflowButton />
+          </div>
+        </div>
+
+        <section>
+          <h2 className="text-sm font-medium text-zinc-300">Or use a template</h2>
+
+          <p className="mt-1 text-xs text-zinc-600">
+            Each one creates a new, fully wired workflow you can edit.
+          </p>
+
+          <div className="mt-4">
+            <TemplateGallery variant="page" limit={3} />
+          </div>
+        </section>
       </div>
     );
   }

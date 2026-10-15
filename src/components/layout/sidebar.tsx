@@ -30,6 +30,7 @@ const navigation = [
   {
     label: "Templates",
     icon: Boxes,
+    href: "/templates",
   },
 ];
 
