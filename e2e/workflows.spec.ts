@@ -364,3 +364,154 @@ test.describe("variables panel", () => {
     await expect(page.getByText(/outputs · .* references/)).toBeVisible();
   });
 });
+
+test.describe("theme", () => {
+  test("switches between light and dark and remembers the choice", async ({
+    page,
+  }) => {
+    /**
+     * The system preference decides what "system" resolves to, so it is
+     * pinned to keep the test deterministic.
+     */
+    await page.emulateMedia({ colorScheme: "dark" });
+
+    await openWorkflowsPage(page);
+
+    const toggle = page.getByRole("button", { name: /^Theme:/ });
+
+    const initial = await page.locator("html").getAttribute("data-theme");
+
+    expect(initial).toBe("dark");
+
+    await toggle.click();
+
+    expect(await page.locator("html").getAttribute("data-theme")).toBe("light");
+
+    await page.reload();
+
+    expect(await page.locator("html").getAttribute("data-theme")).toBe("light");
+  });
+});
+
+test.describe("keyboard shortcuts", () => {
+  test("lists the shortcuts from the topbar", async ({ page }) => {
+    await openWorkflowsPage(page);
+
+    await page.getByRole("button", { name: /keyboard shortcuts/i }).click();
+
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.getByText("Undo the last change")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+
+    await expect(page.getByRole("dialog")).toBeHidden();
+  });
+
+  test("opens with the question mark key", async ({ page }) => {
+    await openWorkflowsPage(page);
+
+    await page.keyboard.press("?");
+
+    await expect(page.getByRole("dialog")).toBeVisible();
+  });
+
+  test("duplicates and removes a node with the keyboard", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+    await expect(page.locator(".react-flow__node")).toHaveCount(1);
+
+    await page.keyboard.press("Control+d");
+    await expect(page.locator(".react-flow__node")).toHaveCount(2);
+
+    await page.keyboard.press("Delete");
+    await expect(page.locator(".react-flow__node")).toHaveCount(1);
+  });
+
+  test("does not steal keys while typing", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+
+    const name = page.locator("input").first();
+    await name.fill("Typed by keyboard");
+
+    /**
+     * The duplicate shortcut must not fire while the field has focus.
+     */
+    await name.press("Control+d");
+
+    await expect(page.locator(".react-flow__node")).toHaveCount(1);
+    await expect(name).toHaveValue("Typed by keyboard");
+  });
+});
+
+test.describe("mobile editor", () => {
+  test.use({ viewport: { width: 390, height: 780 } });
+
+  test("opens and closes the node library", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.getByRole("button", { name: "Toggle node library" }).click();
+
+    await expect(page.getByRole("heading", { name: "Node Library" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Close node library" }).first().click();
+
+    await expect(page.getByRole("heading", { name: "Node Library" })).toBeHidden();
+  });
+
+  test("opens the inspector as a full width panel", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.getByRole("button", { name: "Toggle node inspector" }).click();
+
+    const panel = page.locator("aside").last();
+    const box = await panel.boundingBox();
+
+    expect(box?.width).toBeGreaterThan(300);
+  });
+
+  test("adds a node from the library on a touch sized screen", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.getByRole("button", { name: "Toggle node library" }).click();
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+
+    await expect(page.locator(".react-flow__node")).toHaveCount(1);
+  });
+});
+
+test.describe("execution dock", () => {
+  test("stays out of the way until a run happens", async ({ page }) => {
+    await createWorkflow(page);
+
+    await expect(page.getByText("Workflow Execution")).toBeHidden();
+
+    await useTemplate(page);
+    await page.getByRole("button", { name: "Dry run workflow" }).click();
+
+    await expect(page.getByText("Workflow Execution").first()).toBeVisible();
+
+    await page.getByRole("button", { name: "Hide execution details" }).click();
+
+    await expect(page.getByRole("button", { name: "Show execution details" })).toBeVisible();
+  });
+});
+
+test.describe("missing workflows", () => {
+  test("explains that the workflow is gone", async ({ page }) => {
+    await page.goto("/workflows/00000000-0000-0000-0000-000000000000");
+
+    await expect(page.getByText("Workflow not found")).toBeVisible();
+    await expect(page.getByRole("link", { name: /back to workflows/i })).toBeVisible();
+  });
+
+  test("recovers after following the link back", async ({ page }) => {
+    await page.goto("/workflows/00000000-0000-0000-0000-000000000000");
+
+    await page.getByRole("link", { name: /back to workflows/i }).click();
+
+    await expect(page).toHaveURL(/\/workflows$/);
+  });
+});

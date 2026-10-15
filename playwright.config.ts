@@ -35,9 +35,13 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: `npx next start -p ${port}`,
+    /**
+     * Built before the tests run, so they always exercise the current
+     * code instead of whatever was compiled last.
+     */
+    command: `npm run build && npx next start -p ${port}`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: 180_000,
   },
 });

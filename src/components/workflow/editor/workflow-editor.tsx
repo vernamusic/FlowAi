@@ -1,15 +1,17 @@
 "use client";
 
 import { ReactFlowProvider } from "@xyflow/react";
-import { PanelLeft, PanelRight } from "lucide-react";
+import { PanelLeft, PanelRight, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import "@xyflow/react/dist/style.css";
 
 import { NodeLibrary } from "@/components/workflow/sidebar/node-library";
 import { Walkthrough } from "@/components/workflow/onboarding/walkthrough";
+import { isTypingTarget } from "@/lib/shortcuts/shortcuts";
 import { useWorkflowStore } from "@/store/workflow.store";
 import { WorkflowCanvas } from "./workflow-canvas";
+import { EditorSkeleton, WorkflowNotFound } from "./workflow-not-found";
 import { WorkflowInspector } from "@/components/workflow/inspector/workflow-inspector";
 
 interface WorkflowEditorProps {
@@ -19,6 +21,7 @@ interface WorkflowEditorProps {
 export function WorkflowEditor({ workflowId }: WorkflowEditorProps) {
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [isInspectorOpen, setIsInspectorOpen] = useState(false);
+  const [settledFor, setSettledFor] = useState<string | null>(null);
   const loadWorkflow = useWorkflowStore((state) => state.loadWorkflow);
   const resetWorkflow = useWorkflowStore((state) => state.resetWorkflow);
   const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId);
@@ -26,7 +29,11 @@ export function WorkflowEditor({ workflowId }: WorkflowEditorProps) {
   const duplicateNode = useWorkflowStore((state) => state.duplicateNode);
   const undo = useWorkflowStore((state) => state.undo);
   const redo = useWorkflowStore((state) => state.redo);
+  const saveCurrentWorkflow = useWorkflowStore((state) => state.saveCurrentWorkflow);
+  const runWorkflow = useWorkflowStore((state) => state.runWorkflow);
+  const selectNode = useWorkflowStore((state) => state.selectNode);
   const nodeCount = useWorkflowStore((state) => state.workflow?.nodes.length ?? 0);
+  const workflow = useWorkflowStore((state) => state.workflow);
 
   useEffect(() => {
     if (!loadWorkflow(workflowId)) {
@@ -35,33 +42,74 @@ export function WorkflowEditor({ workflowId }: WorkflowEditorProps) {
   }, [loadWorkflow, resetWorkflow, workflowId]);
 
   /**
-   * The tour introduces the editor itself, so it only appears while the
-   * workflow is still empty.
+   * Loading is synchronous, so the only thing to wait for is the first
+   * paint afterwards. That is what tells "still loading" apart from
+   * "nothing stored under this id".
    */
-  const isFirstRun = nodeCount <= 1;
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettledFor(workflowId), 0);
+
+    return () => window.clearTimeout(timer);
+  }, [workflowId]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (isTypingTarget(event.target)) return;
       const modifier = event.ctrlKey || event.metaKey;
-      if (modifier && event.key.toLowerCase() === "z") {
+      const key = event.key.toLowerCase();
+
+      if (modifier && key === "z") {
         event.preventDefault();
         if (event.shiftKey) redo(); else undo();
-      } else if (modifier && event.key.toLowerCase() === "y") {
+      } else if (modifier && key === "y") {
         event.preventDefault();
         redo();
-      } else if (modifier && event.key.toLowerCase() === "d" && selectedNodeId) {
+      } else if (modifier && key === "s") {
+        event.preventDefault();
+        saveCurrentWorkflow();
+      } else if (modifier && event.key === "Enter") {
+        event.preventDefault();
+        void runWorkflow();
+      } else if (modifier && key === "d" && selectedNodeId) {
         event.preventDefault();
         duplicateNode(selectedNodeId);
       } else if ((event.key === "Delete" || event.key === "Backspace") && selectedNodeId) {
         event.preventDefault();
         removeNode(selectedNodeId);
+      } else if (event.key === "Escape") {
+        selectNode(null);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [duplicateNode, redo, removeNode, selectedNodeId, undo]);
+  }, [
+    duplicateNode,
+    redo,
+    removeNode,
+    runWorkflow,
+    saveCurrentWorkflow,
+    selectNode,
+    selectedNodeId,
+    undo,
+  ]);
+
+  /**
+   * The tour introduces the editor itself, so it only appears while the
+   * workflow is still empty.
+   */
+  const isFirstRun = nodeCount <= 1;
+
+  /**
+   * An unknown id used to leave the editor on "Loading workflow..." for
+   * the whole session.
+   */
+  if (!workflow) {
+    return settledFor === workflowId ? (
+      <WorkflowNotFound workflowId={workflowId} />
+    ) : (
+      <EditorSkeleton />
+    );
+  }
 
   return (
     <ReactFlowProvider>
@@ -108,11 +156,65 @@ export function WorkflowEditor({ workflowId }: WorkflowEditorProps) {
         </div>
 
         {isLibraryOpen && (
-          <NodeLibrary className="absolute inset-y-0 left-0 z-30 shadow-2xl lg:hidden" />
+          <div className="absolute inset-0 z-30 lg:hidden">
+            <div
+              aria-hidden="true"
+              onClick={() => setIsLibraryOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+
+            <div className="absolute inset-y-0 left-0 z-10 flex w-full max-w-xs flex-col">
+              <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-950 px-3 py-2">
+                <span className="text-[11px] font-medium uppercase tracking-widest text-zinc-600">
+                  Add a node
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => setIsLibraryOpen(false)}
+                  aria-label="Close node library"
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1">
+                <NodeLibrary className="h-full" />
+              </div>
+            </div>
+          </div>
         )}
 
         {isInspectorOpen && (
-          <WorkflowInspector className="absolute inset-y-0 right-0 z-30 shadow-2xl lg:hidden" />
+          <div className="absolute inset-0 z-30 lg:hidden">
+            <div
+              aria-hidden="true"
+              onClick={() => setIsInspectorOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+
+            <div className="absolute inset-y-0 right-0 z-10 flex w-full max-w-sm flex-col">
+              <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-950 px-3 py-2">
+                <span className="text-[11px] font-medium uppercase tracking-widest text-zinc-600">
+                  Inspector
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => setIsInspectorOpen(false)}
+                  aria-label="Close inspector"
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1">
+                <WorkflowInspector className="h-full" />
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </ReactFlowProvider>

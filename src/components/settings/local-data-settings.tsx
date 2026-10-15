@@ -1,10 +1,12 @@
 "use client";
 
-import { AlertTriangle, DatabaseBackup, RotateCcw } from "lucide-react";
+import { AlertTriangle, DatabaseBackup, History, RotateCcw } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 
+import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { clearExecutionHistory } from "@/lib/workflow/execution/execution-storage";
 import {
-  getSavedWorkflows,
+  getSavedWorkflowCount,
   getWorkflowStorageStatus,
   resetSavedWorkflows,
   subscribeToWorkflowStorage,
@@ -14,13 +16,25 @@ import { useWorkflowStore } from "@/store/workflow.store";
 
 export function LocalDataSettings() {
   const resetWorkflow = useWorkflowStore((state) => state.resetWorkflow);
+  const clearExecution = useWorkflowStore((state) => state.clearExecution);
   const status = useSyncExternalStore(
     subscribeToWorkflowStorage,
     getWorkflowStorageStatus,
     () => ({ savedAt: null, recovered: false }),
   );
+
+  /**
+   * A primitive snapshot, because reading storage during render can write
+   * to it when a migration is needed.
+   */
+  const workflowCount = useSyncExternalStore(
+    subscribeToWorkflowStorage,
+    getSavedWorkflowCount,
+    () => 0,
+  );
+
   const [didReset, setDidReset] = useState(false);
-  const workflowCount = getSavedWorkflows().length;
+  const [didClearRuns, setDidClearRuns] = useState(false);
 
   const handleReset = () => {
     if (!window.confirm("Reset all locally saved workflows? This cannot be undone.")) return;
@@ -29,13 +43,33 @@ export function LocalDataSettings() {
     setDidReset(true);
   };
 
+  const handleClearRuns = () => {
+    if (!window.confirm("Delete the saved execution history? Workflows are not affected.")) return;
+    clearExecutionHistory();
+    clearExecution();
+    setDidClearRuns(true);
+  };
+
   return (
     <section className="mx-auto w-full max-w-3xl p-4 sm:p-6 lg:p-8">
       <p className="text-sm text-zinc-500">Workspace</p>
       <h1 className="mt-1 text-2xl font-semibold tracking-tight">Settings</h1>
       <p className="mt-2 text-sm text-zinc-500">Manage data stored only in this browser.</p>
 
-      <div className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <div className="mt-8 flex items-start justify-between gap-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-zinc-100">Appearance</h2>
+          <p className="mt-1 text-xs leading-5 text-zinc-500">
+            Light, dark, or follow your system. Applies immediately.
+          </p>
+        </div>
+
+        <div className="shrink-0">
+          <ThemeToggle />
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
         <div className="flex gap-3">
           <DatabaseBackup className="mt-0.5 h-5 w-5 text-violet-300" />
           <div>
@@ -51,6 +85,28 @@ export function LocalDataSettings() {
           </div>
         )}
         {didReset && <p role="status" className="mt-4 text-xs text-emerald-400">All local workflows have been reset.</p>}
+      </div>
+
+      <div className="mt-5 rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+        <div className="flex gap-3">
+          <History className="mt-0.5 h-5 w-5 text-zinc-400" />
+          <div>
+            <h2 className="text-sm font-semibold text-zinc-100">Execution history</h2>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">
+              FlowAI keeps the last 20 runs in this browser, including prompts and responses.
+            </p>
+          </div>
+        </div>
+
+        {didClearRuns && (
+          <p role="status" className="mt-4 text-xs text-emerald-400">
+            Execution history cleared.
+          </p>
+        )}
+
+        <button type="button" onClick={handleClearRuns} className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg border border-zinc-700 px-3 text-sm text-zinc-300 transition hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
+          <RotateCcw className="h-4 w-4" /> Clear execution history
+        </button>
       </div>
 
       <div className="mt-5 rounded-xl border border-red-500/20 bg-red-500/5 p-5">

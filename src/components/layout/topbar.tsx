@@ -1,6 +1,7 @@
 "use client";
 
-import { Search, User } from "lucide-react";
+import { ShortcutsDialog } from "@/components/ui/shortcuts-dialog";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 
 export function Topbar() {
   return (
@@ -16,37 +17,9 @@ export function Topbar() {
 
       {/* Actions */}
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-        {/* Desktop Search */}
-        <button
-          type="button"
-          className="hidden items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-400 transition hover:border-zinc-700 hover:text-zinc-200 sm:flex"
-        >
-          <Search className="h-4 w-4" />
+        <ShortcutsDialog />
 
-          <span>Search</span>
-
-          <kbd className="ml-4 rounded border border-zinc-700 px-1.5 py-0.5 text-xs">
-            ⌘K
-          </kbd>
-        </button>
-
-        {/* Mobile Search */}
-        <button
-          type="button"
-          aria-label="Search"
-          className="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-400 transition hover:border-zinc-700 hover:text-zinc-200 sm:hidden"
-        >
-          <Search className="h-4 w-4" />
-        </button>
-
-        {/* Profile */}
-        <button
-          type="button"
-          aria-label="Profile"
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 transition hover:border-zinc-700"
-        >
-          <User className="h-4 w-4 text-zinc-400" />
-        </button>
+        <ThemeToggle />
       </div>
     </header>
   );

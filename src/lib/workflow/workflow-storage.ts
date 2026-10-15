@@ -19,6 +19,12 @@ export interface WorkflowStorageStatus {
 
 let storageStatus: WorkflowStorageStatus = { savedAt: null, recovered: false };
 
+/**
+ * Stored separately so components can subscribe to a primitive instead of
+ * re-reading and re-parsing storage on every render.
+ */
+let workflowCount = 0;
+
 function setStorageStatus(next: WorkflowStorageStatus) {
   if (
     storageStatus.savedAt !== next.savedAt ||
@@ -26,6 +32,10 @@ function setStorageStatus(next: WorkflowStorageStatus) {
   ) {
     storageStatus = next;
   }
+}
+
+function setWorkflowCount(count: number) {
+  workflowCount = count;
 }
 
 function canUseStorage() {
@@ -55,6 +65,7 @@ function persist(workflows: Workflow[], recovered = false) {
     workflows,
   };
   window.localStorage.setItem(storageKey, JSON.stringify(envelope));
+  setWorkflowCount(workflows.length);
   setStorageStatus({ savedAt, recovered });
   window.dispatchEvent(new Event(changeEvent));
 }
@@ -75,6 +86,7 @@ function readWorkflows(): Workflow[] {
      * The key can disappear between sessions, for example when the user
      * clears site data, so the reported status has to follow.
      */
+    setWorkflowCount(0);
     setStorageStatus({ savedAt: null, recovered: false });
     return [];
   }
@@ -95,6 +107,7 @@ function readWorkflows(): Workflow[] {
     }
 
     const workflows = storedWorkflows.filter(isWorkflow);
+    setWorkflowCount(workflows.length);
     const needsMigration =
       Boolean(legacyWorkflows) ||
       envelope?.version !== schemaVersion ||
@@ -147,6 +160,15 @@ export function resetSavedWorkflows() {
 export function getWorkflowStorageStatus() {
   if (canUseStorage()) readWorkflows();
   return storageStatus;
+}
+
+/**
+ * Number of stored workflows, safe to read during render because it is a
+ * primitive kept in sync by the storage subscription.
+ */
+export function getSavedWorkflowCount() {
+  if (canUseStorage()) readWorkflows();
+  return workflowCount;
 }
 
 export function subscribeToWorkflowStorage(callback: () => void) {

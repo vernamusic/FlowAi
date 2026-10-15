@@ -66,6 +66,23 @@ function installStorage(name: "localStorage" | "sessionStorage") {
 installStorage("localStorage");
 installStorage("sessionStorage");
 
+/**
+ * jsdom does not implement `matchMedia`, which the theme system needs to
+ * resolve the "system" preference.
+ */
+if (!window.matchMedia) {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();

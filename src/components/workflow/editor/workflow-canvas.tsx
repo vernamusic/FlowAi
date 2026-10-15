@@ -15,8 +15,8 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 
-import { useCallback, useEffect, useMemo } from "react";
-import { AlertCircle, MousePointer2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertCircle, Activity, ChevronDown, MousePointer2 } from "lucide-react";
 
 import { ExecutionLogs } from "@/components/workflow/execution/execution-logs";
 import { ExecutionPanel } from "@/components/workflow/execution/execution-panel";
@@ -44,6 +44,14 @@ export function WorkflowCanvas() {
   const workflow = useWorkflowStore((state) => state.workflow);
   const execution = useWorkflowStore((state) => state.execution);
   const editorIssues = useWorkflowStore((state) => state.editorIssues);
+  const [isDockOpen, setIsDockOpen] = useState(false);
+
+  /**
+   * The dock covers the bottom of the canvas, so it stays out of the way
+   * until a run is happening or the user asks for it.
+   */
+  const isDockVisible = isDockOpen || execution?.status === "running";
+  const hasExecution = Boolean(execution);
 
   const addNode = useWorkflowStore((state) => state.addNode);
   const addEdge = useWorkflowStore((state) => state.addEdge);
@@ -373,10 +381,45 @@ export function WorkflowCanvas() {
         </div>
       )}
 
-      <div className="absolute bottom-3 left-1/2 z-20 flex w-[calc(100%-1.5rem)] max-w-[460px] -translate-x-1/2 flex-col gap-3 sm:bottom-4 sm:w-[460px]">
-        <ExecutionLogs />
+      {hasExecution && !isDockVisible && (
+        <button
+          type="button"
+          onClick={() => setIsDockOpen(true)}
+          aria-label="Show execution details"
+          className="absolute bottom-3 left-1/2 z-20 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/95 px-3 py-2 text-[11px] text-zinc-300 shadow-xl backdrop-blur transition hover:border-zinc-700 sm:bottom-4"
+        >
+          <Activity className="h-3.5 w-3.5" />
+          Execution
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              execution?.status === "error" ? "bg-red-400" : "bg-emerald-400"
+            }`}
+          />
+        </button>
+      )}
 
-        <ExecutionPanel />
+      <div className="absolute bottom-3 left-1/2 z-20 flex max-h-[60vh] w-[calc(100%-1.5rem)] max-w-[460px] -translate-x-1/2 flex-col gap-3 sm:bottom-4 sm:w-[460px]">
+        {isDockVisible && (
+          <>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsDockOpen(false)}
+                aria-label="Hide execution details"
+                className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-950/95 px-3 py-1.5 text-[10px] text-zinc-400 shadow-lg backdrop-blur transition hover:text-zinc-100"
+              >
+                <ChevronDown className="h-3 w-3" />
+                Hide
+              </button>
+            </div>
+
+            <div className="min-h-0 overflow-y-auto">
+              <ExecutionLogs />
+            </div>
+
+            <ExecutionPanel />
+          </>
+        )}
       </div>
     </div>
   );
