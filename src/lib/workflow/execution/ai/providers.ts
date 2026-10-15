@@ -251,13 +251,6 @@ export function getDefaultModel(providerId?: AiProviderId): string {
   return listAiModels(providerId)[0]?.id ?? "gpt-4o-mini";
 }
 
-export function getMaxOutputTokens(
-  providerId: AiProviderId | undefined,
-  modelId: string | undefined,
-): number {
-  return findAiModel(providerId, modelId)?.maxOutputTokens ?? 128000;
-}
-
 /**
  * Structured output support depends on both the host and the model.
  */

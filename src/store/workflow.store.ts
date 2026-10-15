@@ -49,7 +49,6 @@ interface WorkflowState {
    * Node
    */
   addNode: (node: WorkflowNode) => void;
-  updateNode: (nodeId: string, updates: Partial<WorkflowNode>) => void;
   updateNodePosition: (
     nodeId: string,
     position: {
@@ -59,14 +58,6 @@ interface WorkflowState {
   ) => void;
   removeNode: (nodeId: string) => void;
   duplicateNode: (nodeId: string) => void;
-
-  /**
-   * Node Data
-   */
-  updateNodeData: (
-    nodeId: string,
-    updates: Partial<WorkflowNode["data"]>,
-  ) => void;
 
   /**
    * Node Config
@@ -85,7 +76,6 @@ interface WorkflowState {
   removeEdge: (edgeId: string) => void;
 
   editorIssues: WorkflowValidationIssue[];
-  clearEditorIssues: () => void;
   validateCurrentWorkflow: () => ValidationResult;
 
   historyPast: Workflow[];
@@ -97,8 +87,6 @@ interface WorkflowState {
 
   execution: WorkflowExecution | null;
 
-  isExecutionPanelOpen: boolean;
-  isExecutionLogsOpen: boolean;
   runWorkflow: (options?: { dryRun?: boolean }) => Promise<void>;
   cancelWorkflow: () => void;
   retryWorkflow: () => Promise<void>;
@@ -106,8 +94,6 @@ interface WorkflowState {
   executionHistory: WorkflowExecution[];
   activeExecutionController: AbortController | null;
 
-  closeExecutionPanel: () => void;
-  closeExecutionLogs: () => void;
   clearExecution: () => void;
 }
 
@@ -118,8 +104,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   activeExecutionController: null,
   selectedNodeId: null,
 
-  isExecutionPanelOpen: false,
-  isExecutionLogsOpen: false,
   editorIssues: [],
   historyPast: [],
   historyFuture: [],
@@ -244,32 +228,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       };
     }),
 
-  updateNode: (nodeId, updates) =>
-    set((state) => {
-      if (!state.workflow) {
-        return state;
-      }
-
-      return {
-        workflow: {
-          ...state.workflow,
-
-          nodes: state.workflow.nodes.map((node) =>
-            node.id === nodeId
-              ? {
-                  ...node,
-                  ...updates,
-                }
-              : node,
-          ),
-
-          updatedAt: new Date().toISOString(),
-        },
-        historyPast: [...state.historyPast.slice(-49), state.workflow],
-        historyFuture: [],
-      };
-    }),
-
   updateNodePosition: (nodeId, position) =>
     set((state) => {
       if (!state.workflow) {
@@ -336,40 +294,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       return {
         workflow: { ...state.workflow, nodes: [...state.workflow.nodes, copy], updatedAt: new Date().toISOString() },
         selectedNodeId: copy.id,
-        historyPast: [...state.historyPast.slice(-49), state.workflow],
-        historyFuture: [],
-      };
-    }),
-
-  // --------------------------------------------------
-  // Node Data
-  // --------------------------------------------------
-
-  updateNodeData: (nodeId, updates) =>
-    set((state) => {
-      if (!state.workflow) {
-        return state;
-      }
-
-      return {
-        workflow: {
-          ...state.workflow,
-
-          nodes: state.workflow.nodes.map((node) =>
-            node.id === nodeId
-              ? {
-                  ...node,
-
-                  data: {
-                    ...node.data,
-                    ...updates,
-                  },
-                }
-              : node,
-          ),
-
-          updatedAt: new Date().toISOString(),
-        },
         historyPast: [...state.historyPast.slice(-49), state.workflow],
         historyFuture: [],
       };
@@ -461,7 +385,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         historyFuture: [],
       };
     }),
-  clearEditorIssues: () => set({ editorIssues: [] }),
   validateCurrentWorkflow: () => {
     const workflow = get().workflow;
     const result = workflow
@@ -513,8 +436,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
     const controller = new AbortController();
     set({
-      isExecutionPanelOpen: true,
-      isExecutionLogsOpen: true,
       execution: null,
       activeExecutionController: controller,
     });
@@ -689,21 +610,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   // Execution UI
   // --------------------------------------------------
 
-  closeExecutionPanel: () =>
-    set({
-      isExecutionPanelOpen: false,
-    }),
-
-  closeExecutionLogs: () =>
-    set({
-      isExecutionLogsOpen: false,
-    }),
-
   clearExecution: () =>
     set({
       execution: null,
-      isExecutionPanelOpen: false,
-      isExecutionLogsOpen: false,
     }),
 }));
 

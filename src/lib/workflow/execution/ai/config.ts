@@ -1,8 +1,5 @@
 import { DEFAULT_PROVIDER_ID, getAiProvider, getDefaultModel } from "./providers";
-import { findUnresolvedReferences, collectReferences } from "@/lib/workflow/variables/variable-audit";
 import type { AiPromptConfig, AiResponseFormat } from "./types";
-
-export { findUnresolvedReferences };
 
 export const DEFAULT_AI_TEMPERATURE = 0.7;
 export const DEFAULT_AI_MAX_TOKENS = 1000;
@@ -63,8 +60,4 @@ function clampNumber(
   const parsed = typeof value === "number" && Number.isFinite(value) ? value : fallback;
 
   return Math.min(Math.max(parsed, min), max);
-}
-
-export function collectVariableReferences(text: string): string[] {
-  return collectReferences(text);
 }

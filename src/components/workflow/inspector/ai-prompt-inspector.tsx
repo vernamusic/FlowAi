@@ -2,9 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import {
-  readAiConfig,
-} from "@/lib/workflow/execution/ai/config";
+import { readAiConfig } from "@/lib/workflow/execution/ai/config";
 import type {
   AiPromptConfig,
   AiResponseFormat,

@@ -36,9 +36,3 @@ export function saveExecution(execution: WorkflowExecution) {
 export function clearExecutionHistory() {
   write([]);
 }
-
-export function subscribeToExecutionHistory(callback: () => void) {
-  if (!canUseStorage()) return () => undefined;
-  window.addEventListener(eventName, callback);
-  return () => window.removeEventListener(eventName, callback);
-}

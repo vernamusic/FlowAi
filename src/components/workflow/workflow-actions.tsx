@@ -4,7 +4,7 @@ import { Check, Download, Redo2, Save, Trash2, Undo2, Upload } from "lucide-reac
 import { useRouter } from "next/navigation";
 import { useRef, useState, useSyncExternalStore } from "react";
 
-import { RunWorkflowButton } from "@/lib/workflow/execution/run-workflow-button";
+import { RunWorkflowButton } from "@/components/workflow/execution/run-workflow-button";
 import { useWorkflowStore } from "@/store/workflow.store";
 import { parseImportedWorkflow } from "@/lib/workflow/validation";
 import {
