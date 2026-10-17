@@ -185,6 +185,7 @@ export function WorkflowNode({ data, selected }: NodeProps) {
             id="after"
             type="source"
             position={Position.Right}
+            style={{ top: "35%" }}
             className="!h-2.5 !w-2.5 !border-0 !bg-violet-400"
           />
 
@@ -192,7 +193,7 @@ export function WorkflowNode({ data, selected }: NodeProps) {
             Body
           </span>
 
-          <span className="absolute right-2 top-1/2 translate-y-[-150%] text-[9px] font-medium text-violet-400">
+          <span className="absolute right-2 top-[35%] translate-y-[-50%] text-[9px] font-medium text-violet-400">
             After
           </span>
         </>
@@ -200,25 +201,32 @@ export function WorkflowNode({ data, selected }: NodeProps) {
 
       {isCondition && (
         <>
+          {/**
+           * Both branches leave from the right, one above the other, so a
+           * condition reads the same way as every other left to right
+           * step instead of doubling back on itself.
+           */}
           <Handle
             id="true"
             type="source"
             position={Position.Right}
+            style={{ top: "30%" }}
             className="!h-2.5 !w-2.5 !border-0 !bg-emerald-400"
           />
 
           <Handle
             id="false"
             type="source"
-            position={Position.Left}
+            position={Position.Right}
+            style={{ top: "70%" }}
             className="!h-2.5 !w-2.5 !border-0 !bg-red-400"
           />
 
-          <span className="absolute -right-1 top-1/2 translate-x-full -translate-y-1/2 text-[9px] font-medium text-emerald-400">
+          <span className="absolute right-2 top-[30%] translate-y-[-50%] text-[9px] font-medium text-emerald-400">
             True
           </span>
 
-          <span className="absolute -left-1 top-1/2 -translate-x-full -translate-y-1/2 text-[9px] font-medium text-red-400">
+          <span className="absolute right-2 top-[70%] translate-y-[-50%] text-[9px] font-medium text-red-400">
             False
           </span>
         </>

@@ -49,13 +49,18 @@ interface WorkflowState {
    * Node
    */
   addNode: (node: WorkflowNode) => void;
-  updateNodePosition: (
-    nodeId: string,
-    position: {
-      x: number;
-      y: number;
-    },
-  ) => void;
+
+  /**
+   * Node position
+   *
+   * Moving a node reports a change for every step of the drag, so the
+   * position is applied without touching history. `beginNodeDrag` and
+   * `endNodeDrag` bracket the drag and record a single undo step for it,
+   * and only if the node actually ended up somewhere else.
+   */
+  updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
+  beginNodeDrag: () => void;
+  endNodeDrag: () => void;
   removeNode: (nodeId: string) => void;
   duplicateNode: (nodeId: string) => void;
 
@@ -98,6 +103,14 @@ interface WorkflowState {
 
   clearExecution: () => void;
 }
+
+/**
+ * The workflow as it was before a drag started.
+ *
+ * Kept outside the store state on purpose: it is only read once, when the
+ * drag ends, and nothing renders from it.
+ */
+let dragSnapshot: Workflow | null = null;
 
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   workflow: null,
@@ -252,7 +265,50 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
           updatedAt: new Date().toISOString(),
         },
-        historyPast: [...state.historyPast.slice(-49), state.workflow],
+      };
+    }),
+
+  /**
+   * One undo step per drag, taken before the first movement, so undo
+   * takes the node back to where the drag started rather than one
+   * pixel at a time.
+   */
+  beginNodeDrag: () => {
+    dragSnapshot = get().workflow;
+  },
+
+  endNodeDrag: () =>
+    set((state) => {
+      const before = dragSnapshot;
+
+      dragSnapshot = null;
+
+      if (!before || !state.workflow) {
+        return state;
+      }
+
+      /**
+       * A click on a node is a drag that ends where it started, and it
+       * shouldn't cost the user an undo press.
+       */
+      const moved = before.nodes.some((node) => {
+        const current = state.workflow?.nodes.find(
+          (item) => item.id === node.id,
+        );
+
+        return (
+          !current ||
+          current.position.x !== node.position.x ||
+          current.position.y !== node.position.y
+        );
+      });
+
+      if (!moved) {
+        return state;
+      }
+
+      return {
+        historyPast: [...state.historyPast.slice(-49), before],
         historyFuture: [],
       };
     }),

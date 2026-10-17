@@ -18,6 +18,36 @@ body {
 }
 
 /* ================================
+   Sidebar
+   =============================================================
+   The sidebar is fixed, so the content has to be pushed aside by
+   exactly the sidebar's width. Both read the same variable, which
+   means the two can't drift apart.
+   ================================================================ */
+
+:root {
+  --sidebar-width: 4rem;
+}
+
+[data-sidebar="expanded"] {
+  --sidebar-width: 16rem;
+}
+
+/**
+ * Below the breakpoint the sidebar is an overlay, so it is always full
+ * width and the content keeps the whole screen.
+ */
+@media (min-width: 64rem) {
+  .app-sidebar {
+    width: var(--sidebar-width);
+  }
+
+  .app-content {
+    padding-left: var(--sidebar-width);
+  }
+}
+
+/* ================================
    Theme
    =============================================================
    The app is built with the zinc scale, so a light theme is a

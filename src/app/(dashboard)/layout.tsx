@@ -11,13 +11,7 @@ export default function DashboardLayout({
     <div className="flex h-dvh min-h-screen flex-col overflow-hidden bg-zinc-950 text-zinc-100">
       <Sidebar />
 
-      <div
-        className="
-          flex min-h-0 flex-1 flex-col
-          lg:pl-16
-          transition-[padding] duration-200
-        "
-      >
+      <div className="app-content flex min-h-0 flex-1 flex-col transition-[padding] duration-200">
         <Topbar />
 
         <main className="flex min-h-0 flex-1 flex-col">{children}</main>

@@ -513,6 +513,214 @@ test.describe("graph edges", () => {
   });
 });
 
+test.describe("canvas", () => {
+  test("drops a node on a grid", async ({ page }) => {
+    await createWorkflow(page);
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+
+    const node = page.locator(".react-flow__node").first();
+    const box = await node.boundingBox();
+
+    /**
+     * A deliberately unaligned drag: if the canvas didn't snap, this
+     * would land between grid lines.
+     */
+    await page.mouse.move(box!.x + 40, box!.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + 173, box!.y + 119, { steps: 10 });
+    await page.mouse.up();
+
+    const transform = await node.evaluate(
+      (element) => (element as HTMLElement).style.transform,
+    );
+
+    const [, x, y] = transform.match(/translate\((-?[\d.]+)px, (-?[\d.]+)px\)/) ?? [];
+
+    expect(Number(x) % 16).toBe(0);
+    expect(Number(y) % 16).toBe(0);
+  });
+
+  test("undoes a whole drag in one step", async ({ page }) => {
+    await createWorkflow(page);
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+
+    const node = page.locator(".react-flow__node").first();
+    const before = await node.evaluate(
+      (element) => (element as HTMLElement).style.transform,
+    );
+
+    const box = await node.boundingBox();
+
+    await page.mouse.move(box!.x + 40, box!.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + 340, box!.y + 220, { steps: 25 });
+    await page.mouse.up();
+
+    await page.keyboard.press("Control+z");
+
+    /**
+     * The drag reports a change for every step it travels, and all of
+     * them have to collapse into the one undo step.
+     */
+    await expect
+      .poll(async () =>
+        node.evaluate((element) => (element as HTMLElement).style.transform),
+      )
+      .toBe(before);
+  });
+
+  test("pans with space held down, even from over a node", async ({ page }) => {
+    await createWorkflow(page);
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+
+    const node = page.locator(".react-flow__node").first();
+    const viewport = page.locator(".react-flow__viewport");
+
+    const positionBefore = await node.evaluate(
+      (element) => (element as HTMLElement).style.transform,
+    );
+
+    const viewportBefore = await viewport.evaluate(
+      (element) => (element as HTMLElement).style.transform,
+    );
+
+    const box = await node.boundingBox();
+
+    await page.keyboard.down("Space");
+    await page.mouse.move(box!.x + 40, box!.y + 20);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + 240, box!.y + 160, { steps: 12 });
+    await page.mouse.up();
+    await page.keyboard.up("Space");
+
+    /**
+     * The canvas moved, the node stayed where it was, and the gesture
+     * didn't change what is selected.
+     */
+    expect(
+      await viewport.evaluate(
+        (element) => (element as HTMLElement).style.transform,
+      ),
+    ).not.toBe(viewportBefore);
+
+    expect(
+      await node.evaluate((element) => (element as HTMLElement).style.transform),
+    ).toBe(positionBefore);
+
+    await expect(
+      page.getByRole("heading", { name: "Manual Trigger" }),
+    ).toBeVisible();
+  });
+
+  test("sends both condition branches out of the right side", async ({ page }) => {
+    await page.goto("/templates");
+    await page
+      .getByRole("button", { name: /use this template/i })
+      .nth(2)
+      .click();
+    await expect(page).toHaveURL(/\/workflows\/[0-9a-f-]{36}$/);
+    await dismissTour(page);
+
+    const condition = page
+      .locator(".react-flow__node")
+      .filter({ hasText: "Score above" })
+      .first();
+
+    const nodeBox = await condition.boundingBox();
+
+    for (const branch of ["True", "False"]) {
+      const handle = condition
+        .locator(`.react-flow__handle[data-handleid="${branch.toLowerCase()}"]`)
+        .first();
+
+      const handleBox = await handle.boundingBox();
+
+      /**
+       * A branch that leaves to the left sends the edge back across the
+       * node it came from.
+       */
+      expect(handleBox!.x).toBeGreaterThan(nodeBox!.x + nodeBox!.width / 2);
+    }
+
+    expect(
+      await condition
+        .locator('.react-flow__handle[data-handleid="false"]')
+        .first()
+        .boundingBox()
+        .then((box) => box!.y),
+    ).toBeGreaterThan(
+      await condition
+        .locator('.react-flow__handle[data-handleid="true"]')
+        .first()
+        .boundingBox()
+        .then((box) => box!.y),
+    );
+  });
+});
+
+test.describe("sidebar", () => {
+  test("collapses, remembers the choice, and stops covering the content", async ({
+    page,
+  }) => {
+    await openWorkflowsPage(page);
+
+    const sidebar = page.locator("aside").first();
+    const content = page.locator(".app-content");
+
+    const width = async () =>
+      Math.round((await sidebar.boundingBox())!.width);
+
+    const padding = async () =>
+      Math.round(
+        Number.parseFloat(
+          await content.evaluate(
+            (element) => getComputedStyle(element).paddingLeft,
+          ),
+        ),
+      );
+
+    const collapsedWidth = await width();
+
+    await page.getByRole("button", { name: "Expand sidebar" }).click();
+
+    expect(collapsedWidth).toBeLessThan(256);
+
+    /**
+     * The content has to move by exactly what the sidebar gained, which
+     * is what the shared width variable is for. Polled because the width
+     * animates, and the two only agree once it settles.
+     */
+    await expect.poll(async () => (await width()) - (await padding())).toBe(0);
+
+    await expect.poll(width).toBe(256);
+
+    await page.reload();
+
+    expect(await width()).toBe(256);
+  });
+
+  test("keeps the mobile menu button in the bar it opens", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 780 });
+    await openWorkflowsPage(page);
+
+    const button = page.getByRole("button", { name: "Open navigation" });
+    const header = page.locator("header");
+
+    const headerBox = (await header.boundingBox())!;
+    const buttonBox = (await button.boundingBox())!;
+
+    /**
+     * It used to be fixed to the corner with the header padded aside for
+     * it, which broke the moment either of them moved.
+     */
+    expect(buttonBox.y).toBeGreaterThanOrEqual(headerBox.y);
+    expect(buttonBox.x).toBeGreaterThanOrEqual(headerBox.x);
+
+    await button.click();
+    await expect(page.getByRole("button", { name: "Close navigation" })).toBeVisible();
+  });
+});
+
 test.describe("theme", () => {
   test("switches between light and dark and remembers the choice", async ({
     page,

@@ -3,14 +3,22 @@
 import {
   BarChart3,
   Boxes,
+  ChevronLeft,
   LayoutDashboard,
-  Menu,
   Settings,
   Workflow,
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useSyncExternalStore } from "react";
+
+import {
+  isMobileSidebarOpen,
+  readSidebarCollapsed,
+  setMobileSidebarOpen,
+  subscribeToSidebar,
+  toggleSidebarCollapsed,
+} from "@/lib/ui/sidebar";
 
 const navigation = [
   {
@@ -34,119 +42,113 @@ const navigation = [
   },
 ];
 
+function getCollapsed() {
+  return readSidebarCollapsed();
+}
+
+function getMobileOpen() {
+  return isMobileSidebarOpen();
+}
+
+/**
+ * Labels fade rather than disappear, which is what makes the rail feel
+ * like a rail instead of a layout shift.
+ */
+function labelClass(visible: boolean) {
+  return [
+    "overflow-hidden whitespace-nowrap transition-all duration-200",
+    visible ? "ml-2 max-w-[160px] opacity-100" : "ml-0 max-w-0 opacity-0",
+  ].join(" ");
+}
+
 export function Sidebar() {
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const isCollapsed = useSyncExternalStore(
+    subscribeToSidebar,
+    getCollapsed,
+    () => true,
+  );
+
+  const mobileOpen = useSyncExternalStore(
+    subscribeToSidebar,
+    getMobileOpen,
+    () => false,
+  );
+
+  /**
+   * On a phone the sidebar is an overlay that is either there or not, so
+   * it is always full width and always labelled.
+   */
+  const showLabels = mobileOpen || !isCollapsed;
 
   return (
     <>
-      {/* Mobile menu button */}{" "}
-      {!mobileOpen && (
-        <button
-          type="button"
-          aria-label="Open navigation"
-          onClick={() => setMobileOpen(true)}
-          className=" fixed left-4 top-4 z-[60] flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-400 shadow-lg transition hover:border-zinc-700 hover:text-white lg:hidden "
-        >
-          {" "}
-          <Menu className="h-4 w-4" />{" "}
-        </button>
-      )}
-      {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          onClick={() => setMobileOpen(false)}
-          className="
-            fixed inset-0 z-40
-            bg-black/60
-            lg:hidden
-          "
+          onClick={() => setMobileSidebarOpen(false)}
+          className="fixed inset-0 z-40 bg-black/60 lg:hidden"
         />
       )}
-      {/* Sidebar */}
+
       <aside
-        className={`
-          group/sidebar
-          fixed inset-y-0 left-0 z-50
-          border-r border-zinc-800
-          bg-zinc-950
-
-          transition-all duration-200 ease-out
-
-          ${mobileOpen ? "w-64 translate-x-0" : "w-64 -translate-x-full"}
-
-          lg:translate-x-0
-          lg:w-16
-          lg:hover:w-64
-        `}
+        className={[
+          "app-sidebar",
+          "fixed inset-y-0 left-0 z-50",
+          "border-r border-zinc-800 bg-zinc-950",
+          "transition-[width,transform] duration-200 ease-out",
+          "w-64",
+          mobileOpen ? "translate-x-0" : "-translate-x-full",
+          "lg:translate-x-0",
+        ].join(" ")}
       >
         <div className="flex h-full flex-col">
           {/* Header */}
-          <div className="flex h-16 shrink-0 items-center border-b border-zinc-800 px-3">
+          <div className="flex h-16 shrink-0 items-center gap-1 border-b border-zinc-800 px-3">
             <Link
               href="/"
-              onClick={() => setMobileOpen(false)}
-              className="
-                flex h-10 min-w-0 flex-1
-                items-center
-                overflow-hidden
-                rounded-lg
-                px-2
-                hover:bg-zinc-900
-              "
+              onClick={() => setMobileSidebarOpen(false)}
+              className="flex h-10 min-w-0 flex-1 items-center rounded-lg px-2 hover:bg-zinc-900"
+              title="FlowAI"
             >
-              {/* Logo */}
-              <div className="flex shrink-0 items-center">
-                {/* F */}
-                <span className="text-lg font-semibold text-white">F</span>
+              <span className="shrink-0 text-lg font-semibold text-white">
+                F
+              </span>
 
-                {/* lowAI */}
-                <span
-                  className={`
-                    overflow-hidden
-                    whitespace-nowrap
-                    text-lg
-                    font-semibold
-                    text-white
-
-                    transition-all
-                    duration-200
-
-                    ${
-                      mobileOpen
-                        ? "ml-0.5 max-w-[100px] opacity-100"
-                        : "max-w-0 opacity-0"
-                    }
-
-                    lg:ml-0
-                    lg:max-w-0
-                    lg:opacity-0
-
-                    lg:group-hover/sidebar:ml-0.5
-                    lg:group-hover/sidebar:max-w-[100px]
-                    lg:group-hover/sidebar:opacity-100
-                  `}
-                >
-                  low<span className="text-violet-400">AI</span>
-                </span>
-              </div>
+              <span
+                className={`overflow-hidden whitespace-nowrap text-lg font-semibold text-white transition-all duration-200 ${
+                  showLabels ? "ml-0.5 max-w-[100px] opacity-100" : "ml-0 max-w-0 opacity-0"
+                }`}
+              >
+                low<span className="text-violet-400">AI</span>
+              </span>
             </Link>
 
-            {/* Close */}
+            {/* Close, on a phone */}
             <button
               type="button"
               aria-label="Close navigation"
-              onClick={() => setMobileOpen(false)}
-              className="
-                flex h-8 w-8 shrink-0
-                items-center justify-center
-                rounded-lg
-                text-zinc-500
-                hover:bg-zinc-900
-                hover:text-white
-                lg:hidden
-              "
+              onClick={() => setMobileSidebarOpen(false)}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-900 hover:text-white lg:hidden"
             >
               <X className="h-4 w-4" />
+            </button>
+
+            {/**
+             * Collapse is a desktop affordance: on a phone the sidebar is
+             * already out of the way.
+             */}
+            <button
+              type="button"
+              onClick={toggleSidebarCollapsed}
+              aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-expanded={!isCollapsed}
+              title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-900 hover:text-white lg:flex"
+            >
+              <ChevronLeft
+                className={`h-4 w-4 transition-transform duration-200 ${
+                  isCollapsed ? "" : "rotate-180"
+                }`}
+              />
             </button>
           </div>
 
@@ -157,28 +159,13 @@ export function Sidebar() {
 
               const content = (
                 <>
-                  <div
-                    className="
-                      flex h-6 w-6 shrink-0
-                      items-center justify-center
-                    "
-                  >
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center">
                     <Icon className="h-4 w-4 text-zinc-300" />
                   </div>
 
                   <span
-                    className={`
-                      ml-2 overflow-hidden whitespace-nowrap text-sm text-white
-                      transition-all duration-200
-                      ${
-                        mobileOpen
-                          ? "max-w-[160px] opacity-100"
-                          : "max-w-0 opacity-0"
-                      }
-                      lg:max-w-0 lg:opacity-0
-                      lg:group-hover/sidebar:max-w-[160px]
-                      lg:group-hover/sidebar:opacity-100
-                    `}
+                    className={`text-sm text-white ${labelClass(showLabels)}`}
+                    title={showLabels ? undefined : item.label}
                   >
                     {item.label}
                   </span>
@@ -192,7 +179,7 @@ export function Sidebar() {
                 <Link
                   key={item.label}
                   href={item.href}
-                  onClick={() => setMobileOpen(false)}
+                  onClick={() => setMobileSidebarOpen(false)}
                   className={className}
                 >
                   {content}
@@ -214,49 +201,16 @@ export function Sidebar() {
           <div className="shrink-0 border-t border-zinc-800 p-3">
             <Link
               href="/settings"
-              onClick={() => setMobileOpen(false)}
-              className="
-                flex h-10 w-full
-                items-center
-                overflow-hidden
-                rounded-lg
-                px-2
-                text-white
-                hover:bg-zinc-900
-              "
+              onClick={() => setMobileSidebarOpen(false)}
+              className="flex h-10 w-full items-center overflow-hidden rounded-lg px-2 text-white hover:bg-zinc-900"
             >
-              <div
-                className="
-                  flex h-6 w-6 shrink-0
-                  items-center justify-center
-                "
-              >
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center">
                 <Settings className="h-4 w-4 text-zinc-300" />
               </div>
 
               <span
-                className={`
-                  ml-2
-                  overflow-hidden
-                  whitespace-nowrap
-                  text-sm
-                  text-white
-
-                  transition-all
-                  duration-200
-
-                  ${
-                    mobileOpen
-                      ? "max-w-[160px] opacity-100"
-                      : "max-w-0 opacity-0"
-                  }
-
-                  lg:max-w-0
-                  lg:opacity-0
-
-                  lg:group-hover/sidebar:max-w-[160px]
-                  lg:group-hover/sidebar:opacity-100
-                `}
+                className={`text-sm text-white ${labelClass(showLabels)}`}
+                title={showLabels ? undefined : "Settings"}
               >
                 Settings
               </span>

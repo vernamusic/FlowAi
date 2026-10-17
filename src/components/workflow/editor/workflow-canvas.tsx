@@ -62,6 +62,9 @@ export function WorkflowCanvas() {
     (state) => state.updateNodePosition,
   );
 
+  const beginNodeDrag = useWorkflowStore((state) => state.beginNodeDrag);
+  const endNodeDrag = useWorkflowStore((state) => state.endNodeDrag);
+
   const selectNode = useWorkflowStore((state) => state.selectNode);
   const selectedEdgeId = useWorkflowStore((state) => state.selectedEdgeId);
   const selectEdge = useWorkflowStore((state) => state.selectEdge);
@@ -119,9 +122,14 @@ export function WorkflowCanvas() {
           measured: currentNode.measured,
 
           /**
-           * Preserve current React Flow position.
+           * React Flow's position leads while the node is being dragged,
+           * and the workflow's position leads at every other moment.
+           *
+           * Always preferring React Flow's copy looks harmless, but it
+           * means undo puts a node back in the store while the canvas
+           * keeps drawing it where the last drag left it.
            */
-          position: currentNode.position,
+          position: currentNode.dragging ? currentNode.position : newNode.position,
         };
       });
     });
@@ -287,13 +295,52 @@ export function WorkflowCanvas() {
   );
 
   /**
+   * Space held down turns any drag into a pan, including one that starts
+   * on top of a node.
+ *
+   * React Flow blocks both at once by default: nodes carry the class that
+   * stops the canvas panning, so a drag that starts on one does nothing
+   * at all. While the key is held the nodes drop that class and stop
+   * being draggable, which turns the gesture back into a pan.
+   */
+  const [isPanning, setIsPanning] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code === "Space") setIsPanning(true);
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code === "Space") setIsPanning(false);
+    };
+
+    /**
+     * A window that loses focus mid-hold would otherwise keep panning
+     * for ever.
+     */
+    const handleBlur = () => setIsPanning(false);
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, []);
+
+  /**
    * Select node
    */
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
+      if (isPanning) return;
+
       selectNode(node.id);
     },
-    [selectNode],
+    [isPanning, selectNode],
   );
 
   /**
@@ -326,6 +373,8 @@ export function WorkflowCanvas() {
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onNodeClick={handleNodeClick}
+        onNodeDragStart={beginNodeDrag}
+        onNodeDragStop={endNodeDrag}
         onEdgeClick={handleEdgeClick}
         onEdgeMouseEnter={(_event, edge) => setHoveredEdgeId(edge.id)}
         onEdgeMouseLeave={() => setHoveredEdgeId(null)}
@@ -334,6 +383,30 @@ export function WorkflowCanvas() {
         onDrop={handleDrop}
         onConnect={handleConnect}
         isValidConnection={isValidConnection}
+
+        /**
+         * Nodes land on a 16px grid, so a hand placed graph still lines
+         * up and nothing ends up a few pixels off.
+         */
+        snapToGrid
+        snapGrid={[16, 16]}
+
+        /**
+         * Handles are small, so the area around one that starts a
+         * connection is widened well past the dot itself.
+         */
+        connectionRadius={40}
+
+        /**
+         * Holding space pans, which is the only way to move the canvas
+         * from a position where a node is under the pointer. React Flow
+         * would otherwise let the node swallow the gesture.
+         */
+        panActivationKeyCode="Space"
+        panOnDrag
+        nodesDraggable={!isPanning}
+        noPanClassName={isPanning ? "nopan-off" : "nopan"}
+
         fitView
         colorMode="dark"
       >

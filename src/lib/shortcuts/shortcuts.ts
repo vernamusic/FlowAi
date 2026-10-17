@@ -12,8 +12,14 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["Ctrl", "Shift", "Z"], description: "Redo" },
       { keys: ["Ctrl", "Y"], description: "Redo" },
       { keys: ["Ctrl", "D"], description: "Duplicate the selected node" },
-      { keys: ["Delete"], description: "Remove the selected node" },
+      { keys: ["Delete"], description: "Remove the selected node or connection" },
       { keys: ["Escape"], description: "Deselect the node" },
+    ],
+  },
+  {
+    title: "Canvas",
+    shortcuts: [
+      { keys: ["Space"], description: "Hold to pan, even from over a node" },
     ],
   },
   {
