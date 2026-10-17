@@ -218,8 +218,10 @@ test.describe("exporting", () => {
 
     const exported = JSON.parse(Buffer.concat(chunks).toString("utf8"));
 
-    expect(exported.name).toBe("Untitled Workflow");
-    expect(exported.nodes).toHaveLength(1);
+    expect(exported.kind).toBe("flowai-workflow");
+    expect(exported.version).toBe(2);
+    expect(exported.workflow.name).toBe("Untitled Workflow");
+    expect(exported.workflow.nodes).toHaveLength(1);
   });
 });
 
@@ -260,6 +262,45 @@ test.describe("importing", () => {
      * The name lives in the header input rather than a heading.
      */
     await expect(page.locator("input").first()).toHaveValue("Imported workflow");
+  });
+
+  test("imports a file written by an older FlowAI", async ({ page }) => {
+    await createWorkflow(page);
+
+    /**
+     * Version 1 was a bare workflow with no envelope at all, which is
+     * what every export used to be.
+     */
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "old.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(exportedWorkflow)),
+    });
+
+    await expect(page.locator("input").first()).toHaveValue("Imported workflow");
+    await expect(
+      page.getByText(/Imported and upgraded from format v1/i),
+    ).toBeVisible();
+  });
+
+  test("refuses a file from a newer FlowAI", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "future.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(
+        JSON.stringify({
+          kind: "flowai-workflow",
+          version: 99,
+          exportedAt: new Date().toISOString(),
+          workflow: exportedWorkflow,
+        }),
+      ),
+    });
+
+    await expect(page.getByText(/newer FlowAI/i)).toBeVisible();
+    await expect(page.locator("input").first()).toHaveValue("Untitled Workflow");
   });
 
   test("shows an error for malformed json", async ({ page }) => {
@@ -923,6 +964,68 @@ test.describe("scheduled triggers", () => {
      * the part worth checking: it started, and it did not break.
      */
     await expect(page.getByText("success").first()).toBeVisible();
+  });
+});
+
+test.describe("api keys", () => {
+  test("keeps a key in the session unless it is asked to remember it", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.getByRole("button", { name: /AI Prompt Send a prompt/ }).click();
+
+    const keyField = page.getByLabel("OpenAI API key");
+    const remember = page.getByRole("checkbox", {
+      name: /remember this key on this device/i,
+    });
+
+    await keyField.fill("sk-session-only");
+
+    await expect(page.getByText("Key ready for this session only")).toBeVisible();
+
+    const stored = await page.evaluate(() => ({
+      session: window.sessionStorage.getItem("flowai:ai-credentials") ?? "",
+      local: window.localStorage.getItem("flowai:ai-credentials-remembered") ?? "",
+    }));
+
+    expect(stored.session).toContain("sk-session-only");
+    expect(stored.local).not.toContain("sk-session-only");
+
+    await remember.check();
+
+    await expect(page.getByText("Key remembered on this device")).toBeVisible();
+
+    const remembered = await page.evaluate(() => ({
+      session: window.sessionStorage.getItem("flowai:ai-credentials") ?? "",
+      local: window.localStorage.getItem("flowai:ai-credentials-remembered") ?? "",
+    }));
+
+    expect(remembered.local).toContain("sk-session-only");
+    expect(remembered.session).not.toContain("sk-session-only");
+  });
+
+  test("lists and forgets remembered keys in settings", async ({ page }) => {
+    await page.goto("/workflows");
+    await page.getByRole("button", { name: /new workflow/i }).first().click();
+    await expect(page).toHaveURL(/\/workflows\/[0-9a-f-]{36}$/);
+    await dismissTour(page);
+
+    await page.getByRole("button", { name: /AI Prompt Send a prompt/ }).click();
+    await page.getByLabel("OpenAI API key").fill("sk-remembered");
+    await page
+      .getByRole("checkbox", { name: /remember this key on this device/i })
+      .check();
+
+    await page.goto("/settings");
+
+    await expect(page.getByText("Saved on this device: OpenAI")).toBeVisible();
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: /forget saved keys/i }).click();
+
+    await expect(
+      page.getByText("Remembered keys deleted from this browser."),
+    ).toBeVisible();
+    await expect(page.getByText("No keys are being remembered.")).toBeVisible();
   });
 });
 

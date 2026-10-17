@@ -4,7 +4,6 @@ import { Eye, EyeOff, KeyRound, ShieldCheck } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 
 import {
-  getAiApiKey,
   getAiCredentials,
   getAiCredentialsServerSnapshot,
   setAiCredential,
@@ -45,7 +44,16 @@ export function AiProviderSection({
   );
 
   const provider = getAiProvider(providerId);
-  const apiKey = getAiApiKey(providerId);
+
+  /**
+   * Read the key through the resolved provider rather than the raw
+   * config value. A node with no providerId configured stores an empty
+   * string, so a lookup by that would come back blank while the field
+   * beside it showed the key.
+   */
+  const credential = credentials[provider.id];
+  const apiKey = credential?.apiKey ?? "";
+  const isRemembered = credential?.remembered ?? false;
   const effectiveBaseUrl = normalizeBaseUrl(baseUrl) || provider.defaultBaseUrl;
 
   /**
@@ -62,8 +70,8 @@ export function AiProviderSection({
         <p className="text-xs font-medium text-zinc-300">Provider</p>
 
         <p className="mt-1 text-[10px] leading-4 text-zinc-600">
-          FlowAI talks to any OpenAI-compatible API. Keys stay in this
-          browser session and are never written to the workflow.
+          FlowAI talks to any OpenAI-compatible API. Keys are never written
+          into a workflow or an export.
         </p>
       </div>
 
@@ -78,8 +86,9 @@ export function AiProviderSection({
 
           <HelpTip label="About providers" align="right">
             FlowAI speaks the OpenAI protocol, so any compatible host works.
-            Keys stay in this browser session and are never written into the
-            workflow or an export.
+            Keys live in this browser, never in the workflow or an export.
+            They are forgotten when you close the tab unless you choose to
+            remember them.
           </HelpTip>
         </div>
 
@@ -114,8 +123,8 @@ export function AiProviderSection({
 
             <p className="mt-1 text-[10px] leading-4 text-zinc-400">
               {provider.requiresApiKey
-                ? "Used only in this browser session. It is never saved in the workflow, local storage, or exported JSON."
-                : "Optional for this provider. It is never saved in the workflow, local storage, or exported JSON."}
+                ? "Used only in this browser. It is never saved in the workflow or an exported file."
+                : "Optional for this provider. Never saved in the workflow or an exported file."}
             </p>
           </div>
         </div>
@@ -130,7 +139,7 @@ export function AiProviderSection({
           <input
             id="ai-api-key"
             type={showKey ? "text" : "password"}
-            value={credentials[provider.id]?.apiKey ?? apiKey ?? ""}
+            value={credential?.apiKey ?? apiKey ?? ""}
             onChange={(event) =>
               setAiCredential(provider.id, { apiKey: event.target.value })
             }
@@ -154,13 +163,41 @@ export function AiProviderSection({
           </button>
         </div>
 
+        <label className="mt-3 flex cursor-pointer items-start gap-2.5">
+          <input
+            type="checkbox"
+            checked={isRemembered}
+            onChange={(event) =>
+              setAiCredential(provider.id, { remembered: event.target.checked })
+            }
+            className="mt-0.5 h-3.5 w-3.5 accent-violet-400"
+          />
+
+          <span className="text-[10px] leading-4 text-zinc-400">
+            Remember this key on this device
+
+            <span className="mt-0.5 block text-zinc-600">
+              Off by default. Turning it on stores the key in this browser
+              so it survives closing the tab, which also means any script on
+              this site could read it. Clear it again from Settings, or turn
+              this off.
+            </span>
+          </span>
+        </label>
+
         <p
           className={`mt-2 text-[10px] ${
-            apiKey ? "text-emerald-400" : "text-zinc-600"
+            apiKey
+              ? isRemembered
+                ? "text-violet-300"
+                : "text-emerald-400"
+              : "text-zinc-600"
           }`}
         >
           {apiKey
-            ? "Key ready for this session"
+            ? isRemembered
+              ? "Key remembered on this device"
+              : "Key ready for this session only"
             : provider.requiresApiKey
               ? "Add a key to run this node"
               : "No key required"}

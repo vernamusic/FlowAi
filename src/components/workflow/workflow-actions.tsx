@@ -6,8 +6,11 @@ import { useRef, useState, useSyncExternalStore } from "react";
 
 import { RunWorkflowButton } from "@/components/workflow/execution/run-workflow-button";
 import { useWorkflowStore } from "@/store/workflow.store";
-import { parseImportedWorkflow } from "@/lib/workflow/validation";
 import { downloadWorkflowJson } from "@/lib/workflow/export-workflow";
+import {
+  WORKFLOW_FORMAT_VERSION,
+  readWorkflowImport,
+} from "@/lib/workflow/workflow-format";
 import {
   getWorkflowStorageStatus,
   subscribeToWorkflowStorage,
@@ -29,6 +32,7 @@ export function WorkflowActions({ workflowId }: WorkflowActionsProps) {
   const historyFuture = useWorkflowStore((state) => state.historyFuture);
   const [saved, setSaved] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importNote, setImportNote] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const storageStatus = useSyncExternalStore(
     subscribeToWorkflowStorage,
@@ -53,10 +57,25 @@ export function WorkflowActions({ workflowId }: WorkflowActionsProps) {
     event.target.value = "";
     if (!file) return;
     try {
-      const imported = parseImportedWorkflow(JSON.parse(await file.text()));
-      if (!imported) throw new Error("The file is not a valid FlowAI workflow.");
-      replaceWorkflow(imported);
+      const result = readWorkflowImport(JSON.parse(await file.text()));
+
+      if (!result.workflow) {
+        throw new Error(result.error ?? "The file is not a valid FlowAI workflow.");
+      }
+
+      replaceWorkflow(result.workflow);
       setImportError(null);
+
+      /**
+       * A file from an older build is worth mentioning: it was read, but
+       * it was brought up to the current format rather than taken as it
+       * was.
+       */
+      setImportNote(
+        result.migratedFrom
+          ? `Imported and upgraded from format v${result.migratedFrom} to v${WORKFLOW_FORMAT_VERSION}.`
+          : null,
+      );
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Unable to import this file.");
     }
@@ -114,6 +133,7 @@ export function WorkflowActions({ workflowId }: WorkflowActionsProps) {
         </span>
       )}
       {importError && <p role="alert" className="absolute right-0 top-full mt-2 w-64 rounded-lg border border-red-500/30 bg-zinc-950 p-2 text-xs text-red-300 shadow-xl">{importError}</p>}
+      {importNote && !importError && <p role="status" className="absolute right-0 top-full mt-2 w-64 rounded-lg border border-zinc-800 bg-zinc-950 p-2 text-xs text-zinc-400 shadow-xl">{importNote}</p>}
     </div>
   );
 }

@@ -1,13 +1,18 @@
+import { createWorkflowExport } from "@/lib/workflow/workflow-format";
+
 import type { Workflow } from "@/types/workflow";
 
 /**
  * Save a workflow to the user's downloads folder.
  *
+ * The file carries a format version, so a newer FlowAI can still open it.
  * Shared by the toolbar button and the command palette, so both produce
- * the same file name for the same workflow.
+ * the same file name and the same contents.
  */
 export function downloadWorkflowJson(workflow: Workflow) {
-  const blob = new Blob([JSON.stringify(workflow, null, 2)], {
+  const payload = createWorkflowExport(workflow);
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json",
   });
 

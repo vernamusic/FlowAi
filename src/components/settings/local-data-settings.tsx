@@ -1,9 +1,15 @@
 "use client";
 
-import { AlertTriangle, DatabaseBackup, History, RotateCcw } from "lucide-react";
+import { AlertTriangle, DatabaseBackup, History, KeyRound, RotateCcw } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import {
+  forgetRememberedCredentials,
+  getAiCredentials,
+  subscribeToAiCredentials,
+} from "@/lib/workflow/execution/ai/credentials";
+import { getAiProvider } from "@/lib/workflow/execution/ai/providers";
 import { clearExecutionHistory } from "@/lib/workflow/execution/execution-storage";
 import {
   getSavedWorkflowCount,
@@ -35,6 +41,35 @@ export function LocalDataSettings() {
 
   const [didReset, setDidReset] = useState(false);
   const [didClearRuns, setDidClearRuns] = useState(false);
+  const [didForgetKeys, setDidForgetKeys] = useState(false);
+
+  /**
+   * A snapshot with a stable reference, so toggling a credential does
+   * not re-render this page on every keystroke elsewhere.
+   */
+  const rememberedProviders = useSyncExternalStore(
+    subscribeToAiCredentials,
+    () =>
+      Object.entries(getAiCredentials())
+        .filter(([, credential]) => credential.remembered && credential.apiKey)
+        .map(([providerId]) => providerId)
+        .sort()
+        .join(","),
+    () => "",
+  );
+
+  const handleForgetKeys = () => {
+    if (
+      !window.confirm(
+        "Delete every API key FlowAI is keeping on this device? You will need to add them again.",
+      )
+    ) {
+      return;
+    }
+
+    forgetRememberedCredentials();
+    setDidForgetKeys(true);
+  };
 
   const handleReset = () => {
     if (!window.confirm("Reset all locally saved workflows? This cannot be undone.")) return;
@@ -109,9 +144,53 @@ export function LocalDataSettings() {
         </button>
       </div>
 
+      <div className="mt-5 rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+        <div className="flex gap-3">
+          <KeyRound className="mt-0.5 h-5 w-5 text-zinc-400" />
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-zinc-100">Remembered API keys</h2>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">
+              By default a key is forgotten when you close the tab. Turning on
+              &ldquo;remember this key&rdquo; in an AI Prompt keeps it in this
+              browser instead, which means any script on this site could
+              read it.
+            </p>
+
+            {rememberedProviders ? (
+              <p className="mt-3 text-xs text-zinc-400">
+                Saved on this device:{" "}
+                {rememberedProviders
+                  .split(",")
+                  .map((providerId) => getAiProvider(providerId).label)
+                  .join(", ")}
+              </p>
+            ) : (
+              <p className="mt-3 text-xs text-zinc-600">
+                No keys are being remembered.
+              </p>
+            )}
+
+            {didForgetKeys && (
+              <p role="status" className="mt-3 text-xs text-emerald-400">
+                Remembered keys deleted from this browser.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleForgetKeys}
+          disabled={!rememberedProviders}
+          className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg border border-zinc-700 px-3 text-sm text-zinc-300 transition hover:bg-zinc-900 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+        >
+          <RotateCcw className="h-4 w-4" /> Forget saved keys
+        </button>
+      </div>
+
       <div className="mt-5 rounded-xl border border-red-500/20 bg-red-500/5 p-5">
         <h2 className="text-sm font-semibold text-zinc-100">Reset local workflows</h2>
-        <p className="mt-2 text-xs leading-5 text-zinc-500">This deletes every workflow stored by FlowAI in this browser. It does not affect your AI provider session keys.</p>
+        <p className="mt-2 text-xs leading-5 text-zinc-500">This deletes every workflow stored by FlowAI in this browser. It does not affect your AI provider keys.</p>
         <button type="button" onClick={handleReset} disabled={workflowCount === 0} className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg border border-red-500/30 px-3 text-sm text-red-300 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400">
           <RotateCcw className="h-4 w-4" /> Reset all workflows
         </button>

@@ -35,10 +35,19 @@ There is **no backend**. Everything — the editor, the workflow engine, storage
 
 AI nodes call your provider directly from the browser with **your** key.
 
-- Keys live in **`sessionStorage` only**. They are never written into a workflow, never exported, and never sent anywhere except the provider you chose.
-- Closing the tab forgets the key. There is no "remember me" on purpose: anything persisted to `localStorage` is readable by any script running on your origin.
+- Keys are never written into a workflow, never exported, and never sent anywhere except the provider you chose.
+- By default a key lives in **`sessionStorage` only**: closing the tab forgets it.
+- You can tick **"Remember this key on this device"** in the AI Prompt inspector to keep it in `localStorage` instead. That is opt-in, and the checkbox says why it matters: anything persisted to `localStorage` is readable by any script on your origin. Settings has a **Forget saved keys** button that clears every remembered key.
 - **Token estimates and costs are estimates.** They use published list prices and a local token count. Real usage is reported by the provider in the execution log when it supports it.
 - Because requests come from your browser, a provider that blocks browser origins (CORS) or requires a server-side secret will not work. `responses_format` style APIs that need a backend are out of scope for this design.
+
+### Files you can move between builds
+
+Export writes a **versioned file**: `{ kind: "flowai-workflow", version, exportedAt, workflow }`.
+
+- Import reads any older version, upgrades it, and says so — *"Imported and upgraded from format v1 to v2"*
+- A file from a **newer** FlowAI is refused with a clear message rather than half-read
+- Node types are checked against the node registry, so a workflow using any node this build knows imports cleanly
 
 ### Private browsing
 
@@ -122,8 +131,8 @@ run, because a timer that repeats forever should not quietly spend money.
 
 ### 🧪 Testable
 
-- **159 unit and component tests** (Vitest)
-- **32 browser tests** (Playwright) covering create, save, import, export, reset, and corrupted storage
+- **310 unit and component tests** (Vitest)
+- **61 browser tests** (Playwright) covering create, save, import, export, reset, corrupted storage, the canvas, the command palette, the executions pages, keys and triggers
 - Run everything with `npm run test:all`
 
 ---
@@ -193,7 +202,7 @@ variable-audit      report what will break, before the run
 # 🔒 Privacy
 
 - Workflows and execution history: `localStorage`
-- AI provider keys: `sessionStorage`, per provider
+- AI provider keys: `sessionStorage`, per provider — or `localStorage` for a key you choose to remember
 - Nothing is sent to any FlowAI service, because none exists
 - Requests leave your browser only when a node executes and calls a host you configured
 

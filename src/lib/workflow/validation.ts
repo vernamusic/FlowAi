@@ -1,4 +1,4 @@
-import type { NodeType, Workflow, WorkflowEdge, WorkflowNode } from "@/types/workflow";
+import type { Workflow, WorkflowEdge, WorkflowNode } from "@/types/workflow";
 import { isTriggerNode } from "@/types/workflow";
 import { CONDITION_HANDLES, LOOP_HANDLES } from "@/constants/edges";
 import { getAiProvider, normalizeBaseUrl } from "./execution/ai/providers";
@@ -389,29 +389,4 @@ export function validateWorkflow(workflow: Workflow): ValidationResult {
   }
   if (hasCycle(workflow)) issues.push({ code: "cycle", message: "The workflow contains a cycle." });
   return { valid: issues.length === 0, issues };
-}
-
-const nodeTypes: NodeType[] = [
-  "manual-trigger",
-  "webhook-trigger",
-  "ai-prompt",
-  "condition",
-  "http-request",
-  "transform",
-  "json-parser",
-  "loop",
-  "delay",
-  "output",
-];
-
-export function parseImportedWorkflow(value: unknown): Workflow | null {
-  if (!value || typeof value !== "object") return null;
-  const workflow = value as Partial<Workflow>;
-  if (typeof workflow.name !== "string" || !Array.isArray(workflow.nodes) || !Array.isArray(workflow.edges)) return null;
-  const nodes = workflow.nodes as WorkflowNode[];
-  const edges = workflow.edges as WorkflowEdge[];
-  if (!nodes.every((node) => typeof node?.id === "string" && nodeTypes.includes(node.type) && typeof node.position?.x === "number" && typeof node.position?.y === "number" && typeof node.data?.label === "string" && typeof node.data?.description === "string" && typeof node.data?.config === "object" && node.data.config !== null)) return null;
-  if (!edges.every((edge) => typeof edge?.id === "string" && typeof edge.source === "string" && typeof edge.target === "string")) return null;
-  const now = new Date().toISOString();
-  return { id: typeof workflow.id === "string" ? workflow.id : crypto.randomUUID(), name: workflow.name.trim() || "Imported Workflow", description: typeof workflow.description === "string" ? workflow.description : "", status: workflow.status === "published" ? "published" : "draft", nodes, edges, createdAt: typeof workflow.createdAt === "string" ? workflow.createdAt : now, updatedAt: now };
 }

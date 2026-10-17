@@ -1,25 +1,33 @@
 import type { AiProviderId } from "./types";
 
-const storageKey = "flowai:ai-credentials";
+/**
+ * Credentials never go into a workflow or an export. Where they sit is
+ * the user's call:
+ *
+ * - sessionStorage, the default, which forgets them when the tab closes
+ * - localStorage, only when the user explicitly asks to remember them
+ */
+
+const sessionKey = "flowai:ai-credentials";
+const rememberedKey = "flowai:ai-credentials-remembered";
 const changeEvent = "flowai:ai-credentials-changed";
 
 export interface AiCredential {
   apiKey: string;
+
+  /** True when the user chose to keep this key between sessions. */
+  remembered: boolean;
 }
 
 export type AiCredentialMap = Record<AiProviderId, AiCredential>;
 
 const emptyCredentials: AiCredentialMap = {};
 
-/**
- * Credentials live in sessionStorage only. They are never written into a
- * workflow, localStorage, or exported JSON.
- */
 function isBrowser() {
   return typeof window !== "undefined";
 }
 
-function parseCredentials(raw: string): AiCredentialMap {
+function parseCredentials(raw: string, remembered: boolean): AiCredentialMap {
   if (!raw) {
     return emptyCredentials;
   }
@@ -44,6 +52,7 @@ function parseCredentials(raw: string): AiCredentialMap {
 
       result[providerId] = {
         apiKey: typeof credential.apiKey === "string" ? credential.apiKey : "",
+        remembered: remembered || credential.remembered === true,
       };
     }
 
@@ -53,11 +62,27 @@ function parseCredentials(raw: string): AiCredentialMap {
   }
 }
 
+function readStore(store: "session" | "local"): AiCredentialMap {
+  if (!isBrowser()) return emptyCredentials;
+
+  const target = store === "session" ? window.sessionStorage : window.localStorage;
+
+  try {
+    return parseCredentials(
+      target.getItem(store === "session" ? sessionKey : rememberedKey) ?? "",
+      store === "local",
+    );
+  } catch {
+    return emptyCredentials;
+  }
+}
+
 /**
  * Cached snapshot so `useSyncExternalStore` always gets a stable
  * reference for the same stored value.
  */
-let cacheRaw: string | null = null;
+let cacheSessionRaw: string | null = null;
+let cacheLocalRaw: string | null = null;
 let cacheValue: AiCredentialMap = emptyCredentials;
 
 export function getAiCredentials(): AiCredentialMap {
@@ -65,24 +90,51 @@ export function getAiCredentials(): AiCredentialMap {
     return emptyCredentials;
   }
 
-  const raw = window.sessionStorage.getItem(storageKey) ?? "";
+  const sessionRaw = window.sessionStorage.getItem(sessionKey) ?? "";
+  const localRaw = window.localStorage.getItem(rememberedKey) ?? "";
 
-  if (raw === cacheRaw) {
+  if (sessionRaw === cacheSessionRaw && localRaw === cacheLocalRaw) {
     return cacheValue;
   }
 
-  cacheRaw = raw;
-  cacheValue = parseCredentials(raw);
+  /**
+   * The session wins, because a key typed in this tab is the most
+   * deliberate thing the user has done.
+   */
+  const merged: AiCredentialMap = {
+    ...readStore("local"),
+    ...readStore("session"),
+  };
 
-  return cacheValue;
+  cacheSessionRaw = sessionRaw;
+  cacheLocalRaw = localRaw;
+  cacheValue = merged;
+
+  return merged;
 }
 
 export function getAiCredential(providerId: AiProviderId): AiCredential {
-  return getAiCredentials()[providerId] ?? { apiKey: "" };
+  return getAiCredentials()[providerId] ?? { apiKey: "", remembered: false };
 }
 
 export function getAiApiKey(providerId: AiProviderId): string {
   return getAiCredential(providerId).apiKey;
+}
+
+/**
+ * Whether this provider's key is kept between sessions.
+ */
+export function isAiCredentialRemembered(providerId: AiProviderId): boolean {
+  return getAiCredential(providerId).remembered;
+}
+
+/**
+ * Providers with a key the user chose to remember, for the settings page.
+ */
+export function getRememberedProviderIds(): AiProviderId[] {
+  return Object.entries(getAiCredentials())
+    .filter(([, credential]) => credential.remembered && credential.apiKey)
+    .map(([providerId]) => providerId as AiProviderId);
 }
 
 export function setAiCredential(
@@ -94,16 +146,72 @@ export function setAiCredential(
   }
 
   const current = getAiCredentials();
+  const apiKey = (patch.apiKey ?? current[providerId]?.apiKey ?? "").trim();
+  const remembered =
+    patch.remembered ?? current[providerId]?.remembered ?? false;
 
-  const next: AiCredentialMap = {
-    ...current,
-    [providerId]: {
-      apiKey: (patch.apiKey ?? current[providerId]?.apiKey ?? "").trim(),
-    },
-  };
+  const session = { ...readStore("session") };
+  const local = { ...readStore("local") };
 
-  window.sessionStorage.setItem(storageKey, JSON.stringify(next));
+  /**
+   * A key lives in exactly one place, so turning the setting off really
+   * moves it back rather than leaving a copy behind.
+   */
+  if (remembered) {
+    delete session[providerId];
+    local[providerId] = { apiKey, remembered: true };
+  } else {
+    delete local[providerId];
+    session[providerId] = { apiKey, remembered: false };
+  }
+
+  try {
+    window.sessionStorage.setItem(sessionKey, JSON.stringify(session));
+    window.localStorage.setItem(rememberedKey, JSON.stringify(local));
+  } catch {
+    /**
+     * Private browsing can refuse writes. The key still works for this
+     * tab, it simply will not be remembered.
+     */
+  }
+
+  /**
+   * The cached snapshot is built from raw strings, and storage did not
+   * throw, so the next read will pick this up. Dispatching tells React
+   * to look.
+   */
   window.dispatchEvent(new Event(changeEvent));
+}
+
+export function forgetAiCredential(providerId: AiProviderId): void {
+  const session = { ...readStore("session") };
+  const local = { ...readStore("local") };
+
+  delete session[providerId];
+  delete local[providerId];
+
+  try {
+    window.sessionStorage.setItem(sessionKey, JSON.stringify(session));
+    window.localStorage.setItem(rememberedKey, JSON.stringify(local));
+  } catch {
+    // nothing to do; the value is gone either way once storage recovers
+  }
+
+  window.dispatchEvent(new Event(changeEvent));
+}
+
+/**
+ * Drop every key the user asked to remember, without touching the ones
+ * that only live in this tab.
+ */
+export function forgetRememberedCredentials(): AiProviderId[] {
+  const forgotten = getRememberedProviderIds();
+
+  for (const providerId of forgotten) {
+    forgetAiCredential(providerId);
+  }
+
+  return forgotten;
 }
 
 export function subscribeToAiCredentials(callback: () => void) {
@@ -123,3 +231,6 @@ export function subscribeToAiCredentials(callback: () => void) {
 export function getAiCredentialsServerSnapshot(): AiCredentialMap {
   return emptyCredentials;
 }
+
+/** Exposed so the settings page can tell the user what it would clear. */
+export const rememberedCredentialStorageKey = rememberedKey;

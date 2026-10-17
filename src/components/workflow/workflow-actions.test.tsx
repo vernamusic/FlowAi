@@ -8,6 +8,10 @@ import { NewWorkflowButton } from "@/components/workflow/new-workflow-button";
 import { WorkflowList } from "@/components/workflow/workflow-list";
 import { createWorkflow } from "@/lib/workflow/create-workflow";
 import { createWorkflowNode } from "@/lib/workflow/create-node";
+import {
+  WORKFLOW_FORMAT_VERSION,
+  readWorkflowImport,
+} from "@/lib/workflow/workflow-format";
 import { getSavedWorkflows, saveWorkflow } from "@/lib/workflow/workflow-storage";
 import { useWorkflowStore } from "@/store/workflow.store";
 
@@ -260,8 +264,19 @@ describe("exporting a workflow", () => {
 
     const parsed = JSON.parse(exported);
 
-    expect(parsed.name).toBe("Round Trip");
-    expect(parsed.nodes).toHaveLength(2);
+    /**
+     * An export is a versioned envelope, not a bare workflow, so a newer
+     * FlowAI knows what it is reading.
+     */
+    expect(parsed.kind).toBe("flowai-workflow");
+    expect(parsed.version).toBe(WORKFLOW_FORMAT_VERSION);
+    expect(parsed.workflow.name).toBe("Round Trip");
+    expect(parsed.workflow.nodes).toHaveLength(2);
+
+    /**
+     * And it reads back as the workflow that was open.
+     */
+    expect(readWorkflowImport(parsed).workflow?.nodes).toHaveLength(2);
 
     vi.unstubAllGlobals();
   });

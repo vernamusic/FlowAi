@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  parseImportedWorkflow,
   validateConnection,
   validateWorkflow,
 } from "@/lib/workflow/validation";
@@ -330,70 +329,5 @@ describe("connection rules", () => {
     });
 
     expect(result.issues.map((issue) => issue.code)).toContain("missing-node");
-  });
-});
-
-describe("import parsing", () => {
-  const valid = {
-    name: "Imported",
-    nodes: [
-      {
-        id: "n1",
-        type: "manual-trigger",
-        position: { x: 0, y: 0 },
-        data: { label: "Manual", description: "", category: "trigger", config: {} },
-      },
-    ],
-    edges: [],
-  };
-
-  it("accepts a valid export", () => {
-    const parsed = parseImportedWorkflow(valid);
-
-    expect(parsed?.name).toBe("Imported");
-    expect(parsed?.nodes).toHaveLength(1);
-  });
-
-  it("rejects malformed json shapes", () => {
-    expect(parseImportedWorkflow(null)).toBeNull();
-    expect(parseImportedWorkflow("not json")).toBeNull();
-    expect(parseImportedWorkflow({})).toBeNull();
-    expect(parseImportedWorkflow({ name: "x" })).toBeNull();
-    expect(parseImportedWorkflow({ name: "x", nodes: "no", edges: [] })).toBeNull();
-  });
-
-  it("rejects unknown node types", () => {
-    const parsed = parseImportedWorkflow({
-      ...valid,
-      nodes: [{ ...valid.nodes[0], type: "teleporter" }],
-    });
-
-    expect(parsed).toBeNull();
-  });
-
-  it("rejects nodes with a broken shape", () => {
-    expect(
-      parseImportedWorkflow({
-        ...valid,
-        nodes: [{ id: "n1", type: "manual-trigger" }],
-      }),
-    ).toBeNull();
-  });
-
-  it("rejects edges with a broken shape", () => {
-    expect(
-      parseImportedWorkflow({
-        ...valid,
-        edges: [{ id: "e1", source: "n1" }],
-      }),
-    ).toBeNull();
-  });
-
-  it("fills in missing ids and defaults", () => {
-    const parsed = parseImportedWorkflow({ name: "  ", nodes: valid.nodes, edges: [] });
-
-    expect(parsed?.name).toBe("Imported Workflow");
-    expect(parsed?.status).toBe("draft");
-    expect(parsed?.id).toBeTruthy();
   });
 });
