@@ -13,6 +13,7 @@ import { useWorkflowStore } from "@/store/workflow.store";
 import { WorkflowCanvas } from "./workflow-canvas";
 import { EditorSkeleton, WorkflowNotFound } from "./workflow-not-found";
 import { EditorCommandBridge } from "./editor-command-bridge";
+import { useScheduledTrigger } from "./use-scheduled-trigger";
 import { WorkflowInspector } from "@/components/workflow/inspector/workflow-inspector";
 
 interface WorkflowEditorProps {
@@ -37,6 +38,12 @@ export function WorkflowEditor({ workflowId }: WorkflowEditorProps) {
   const selectNode = useWorkflowStore((state) => state.selectNode);
   const nodeCount = useWorkflowStore((state) => state.workflow?.nodes.length ?? 0);
   const workflow = useWorkflowStore((state) => state.workflow);
+
+  /**
+   * A workflow whose trigger is a page load or an interval starts
+   * itself, for as long as this editor is open.
+   */
+  useScheduledTrigger(workflow);
 
   useEffect(() => {
     if (!loadWorkflow(workflowId)) {

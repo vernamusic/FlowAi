@@ -721,6 +721,26 @@ test.describe("sidebar", () => {
   });
 });
 
+/**
+ * Opens the palette with the keyboard.
+ *
+ * The shortcut is registered while the page hydrates, so a key pressed
+ * a moment too early is simply lost. Pressing again is harmless: the
+ * palette toggles, and the poll stops as soon as it is open.
+ */
+async function openPalette(page: Page) {
+  const input = page.getByRole("combobox", { name: /search commands/i });
+
+  await expect
+    .poll(async () => {
+      await page.keyboard.press("Control+k");
+      return input.isVisible();
+    })
+    .toBe(true);
+
+  return input;
+}
+
 test.describe("command palette", () => {
   test("opens with the keyboard and finds a saved workflow", async ({ page }) => {
     await openWorkflowsPage(page);
@@ -733,11 +753,9 @@ test.describe("command palette", () => {
     await page.getByRole("button", { name: "Save", exact: true }).click();
 
     await openWorkflowsPage(page);
-    await page.keyboard.press("Control+k");
 
-    const input = page.getByRole("combobox", { name: /search commands/i });
+    const input = await openPalette(page);
 
-    await expect(input).toBeVisible();
     await input.fill("quarterly");
 
     await page.getByRole("option", { name: /quarterly report/i }).click();
@@ -748,22 +766,22 @@ test.describe("command palette", () => {
   test("adds a node from inside the editor", async ({ page }) => {
     await createWorkflow(page);
 
-    await page.keyboard.press("Control+k");
-    await page.getByRole("combobox", { name: /search commands/i }).fill("delay");
+    const input = await openPalette(page);
+
+    await input.fill("delay");
 
     await page.getByRole("option", { name: /add delay/i }).click();
 
     await expect(page.locator(".react-flow__node")).toHaveCount(1);
-    await expect(
-      page.getByRole("heading", { name: "Delay" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Delay" })).toBeVisible();
   });
 
   test("leaves editor commands out when there is no editor", async ({ page }) => {
     await openWorkflowsPage(page);
 
-    await page.keyboard.press("Control+k");
-    await page.getByRole("combobox", { name: /search commands/i }).fill("add delay");
+    const input = await openPalette(page);
+
+    await input.fill("add delay");
 
     await expect(page.getByText(/nothing matches/i)).toBeVisible();
   });
@@ -771,25 +789,274 @@ test.describe("command palette", () => {
   test("closes on Escape and reopens on the same key", async ({ page }) => {
     await openWorkflowsPage(page);
 
-    await page.keyboard.press("Control+k");
-    await expect(page.getByRole("combobox")).toBeVisible();
+    await openPalette(page);
 
     await page.keyboard.press("Escape");
     await expect(page.getByRole("combobox")).toBeHidden();
 
-    await page.keyboard.press("Control+k");
-    await expect(page.getByRole("combobox")).toBeVisible();
+    await openPalette(page);
   });
 
   test("runs the workflow from the palette", async ({ page }) => {
     await useTemplate(page);
 
-    await page.keyboard.press("Control+k");
-    await page.getByRole("combobox", { name: /search commands/i }).fill("dry run");
+    const input = await openPalette(page);
+
+    await input.fill("dry run");
 
     await page.getByRole("option", { name: /dry run workflow/i }).click();
 
     await expect(page.getByText("Workflow Execution").first()).toBeVisible();
+  });
+});
+
+test.describe("new nodes", () => {
+  test("adds a math node and calculates with it", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+    await page.getByRole("button", { name: /Calculate a number/ }).click();
+
+    await page.getByLabel("Expression").fill("120 * 0.2");
+
+    await expect(page.getByText("240")).toBeHidden();
+    await page.getByRole("button", { name: "Run Workflow", exact: true }).click();
+
+    await expect(page.getByText("Workflow Execution").first()).toBeVisible();
+  });
+
+  test("rejects a formula that is not arithmetic", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+    await page.getByRole("button", { name: /Calculate a number/ }).click();
+
+    await page.getByLabel("Expression").fill("fetch('https://example.com')");
+
+    /**
+     * A formula is parsed, never evaluated as code, so this is a syntax
+     * error rather than a request.
+     */
+    await expect(page.getByText(/not allowed in a formula/i)).toBeVisible();
+  });
+
+  test("shows resilience settings on a node that can fail", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+
+    await expect(page.getByRole("heading", { name: "Manual Trigger" })).toBeVisible();
+
+    await page.getByRole("button", { name: /Wait before continuing/ }).click();
+
+    await expect(page.getByText("If this node fails")).toBeVisible();
+    await expect(page.getByLabel("Retries")).toBeVisible();
+    await expect(page.getByText("Continue on error")).toBeVisible();
+  });
+
+  test("lets a switch route to the case that matches", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.getByRole("button", { name: /Manual Trigger/ }).click();
+    await page.getByRole("button", { name: /first case that matches/ }).click();
+
+    await expect(page.getByRole("button", { name: "Add a case" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Add a case" }).click();
+
+    await expect(page.getByLabel("Case 3 name")).toBeVisible();
+  });
+});
+
+test.describe("scheduled triggers", () => {
+  test("runs a page load workflow by itself", async ({ page }) => {
+    await seedWorkflow(page, {
+      id: "auto-run",
+      name: "Auto run",
+      nodes: [
+        {
+          id: "trigger-1",
+          type: "page-load-trigger",
+          position: { x: 0, y: 0 },
+          data: {
+            label: "Page Load Trigger",
+            description: "Run when you open this workflow",
+            category: "trigger",
+            config: {},
+          },
+        },
+        {
+          id: "output-1",
+          type: "output",
+          position: { x: 320, y: 0 },
+          data: {
+            label: "Output",
+            description: "Log a message and notify",
+            category: "action",
+            config: { message: "ran on its own", channel: "log" },
+          },
+        },
+      ],
+      edges: [
+        { id: "edge-1", source: "trigger-1", target: "output-1" },
+      ],
+    });
+
+    await page.goto("/workflows/auto-run");
+    await dismissTour(page);
+
+    /**
+     * No button was pressed: the workflow's own trigger started it, and
+     * by the time the test looks the run has already finished, which is
+     * why the dock is closed and the pill that reopens it is showing.
+     */
+    const reopen = page.getByRole("button", { name: "Show execution details" });
+
+    await expect(reopen).toBeVisible();
+
+    await reopen.click();
+
+    await expect(page.getByText("Workflow Execution").first()).toBeVisible();
+
+    /**
+     * The status pill is how a finished run says it finished, which is
+     * the part worth checking: it started, and it did not break.
+     */
+    await expect(page.getByText("success").first()).toBeVisible();
+  });
+});
+
+test.describe("executions", () => {
+  /**
+   * A stored history, so the page has something real to read. Two
+   * workflows, one priced run, one that spent tokens without published
+   * pricing.
+   */
+  async function seedExecutions(page: Page) {
+    await openWorkflowsPage(page);
+
+    await page.evaluate(() => {
+      const now = Date.now();
+      const day = 86_400_000;
+
+      const run = (overrides: Record<string, unknown>) => ({
+        status: "success",
+        startedAt: new Date(now - day).toISOString(),
+        duration: 1500,
+        nodes: [
+          { nodeId: "n1", status: "success", duration: 900, output: { text: "hi" } },
+        ],
+        logs: [],
+        mode: "live",
+        ...overrides,
+      });
+
+      const aiLog = (executionId: string, nodeId: string, tokens: number, cost: number | null) => ({
+        id: `${executionId}-log`,
+        executionId,
+        nodeId,
+        level: "success",
+        message: "AI Prompt completed",
+        timestamp: new Date(now - day).toISOString(),
+        details: {
+          provider: "OpenAI",
+          model: "gpt-4o-mini",
+          promptTokens: tokens,
+          completionTokens: Math.round(tokens / 2),
+          totalTokens: Math.round(tokens * 1.5),
+          usageEstimated: false,
+          cost,
+          costEstimated: false,
+        },
+      });
+
+      window.localStorage.setItem(
+        "flowai:execution-history",
+        JSON.stringify([
+          run({
+            id: "run-fresh",
+            workflowId: "wf-a",
+            workflowName: "Email triage",
+            mode: "dry-run",
+            logs: [aiLog("run-fresh", "n1", 1000, 0.0004)],
+          }),
+          run({
+            id: "run-old",
+            workflowId: "wf-b",
+            workflowName: "Summaries",
+            status: "error",
+            duration: 400,
+            logs: [aiLog("run-old", "n1", 200, null)],
+          }),
+        ]),
+      );
+    });
+  }
+
+  test("lists stored runs and totals their usage", async ({ page }) => {
+    await seedExecutions(page);
+    await page.goto("/executions");
+
+    await expect(page.getByRole("heading", { name: "Executions" })).toBeVisible();
+
+    await expect(page.getByText("Email triage").first()).toBeVisible();
+    await expect(page.getByText("Summaries").first()).toBeVisible();
+
+    await expect(page.getByText("dry run").first()).toBeVisible();
+
+    /**
+     * 1500 + 300 tokens across the two runs. The first match is the
+     * headline tile; the chart shows the same total on hover.
+     */
+    await expect(page.getByText("1.8k", { exact: true }).first()).toBeVisible();
+
+    /**
+     * Only the priced run contributes, and the total says so rather than
+     * pretending the unpriced run was free.
+     */
+    await expect(page.getByText("$0.00040", { exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByText("Priced 1 of 2 runs that used tokens"),
+    ).toBeVisible();
+  });
+
+  test("opens a run and shows what each node did", async ({ page }) => {
+    await seedExecutions(page);
+    await page.goto("/executions");
+
+    await page.getByRole("link", { name: /Email triage/ }).first().click();
+
+    await expect(page).toHaveURL(/\/executions\/run-fresh$/);
+    await expect(page.getByRole("heading", { name: "Email triage" })).toBeVisible();
+
+    await expect(page.getByText("AI usage")).toBeVisible();
+    await expect(page.getByText("gpt-4o-mini")).toBeVisible();
+
+    await page.getByRole("button", { name: /n1/ }).first().click();
+    await expect(page.getByText('"text": "hi"')).toBeVisible();
+  });
+
+  test("explains a run that is no longer stored", async ({ page }) => {
+    await page.goto("/executions/does-not-exist");
+
+    await expect(page.getByRole("heading", { name: "Run not found" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /back to executions/i })).toBeVisible();
+  });
+
+  test("says so when nothing has run yet", async ({ page }) => {
+    await openWorkflowsPage(page);
+    await page.goto("/executions");
+
+    await expect(page.getByText("No runs yet")).toBeVisible();
+    await expect(page.getByRole("link", { name: /go to workflows/i })).toBeVisible();
+  });
+
+  test("is reachable from the sidebar", async ({ page }) => {
+    await openWorkflowsPage(page);
+
+    await page.getByRole("link", { name: "Executions" }).first().click();
+
+    await expect(page).toHaveURL(/\/executions$/);
   });
 });
 

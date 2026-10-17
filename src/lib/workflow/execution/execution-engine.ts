@@ -35,6 +35,28 @@ import {
   executeWebhookTrigger,
   readWebhookTriggerConfig,
 } from "@/lib/workflow/execution/nodes/webhook-trigger";
+import { evaluateCondition as compareValues } from "@/lib/workflow/execution/nodes/comparison";
+import {
+  executeMerge,
+  readMergeConfig,
+  type MergeInput,
+} from "@/lib/workflow/execution/nodes/merge";
+import {
+  executeSwitch,
+  readSwitchConfig,
+} from "@/lib/workflow/execution/nodes/switch";
+import { executeMath, readMathConfig } from "@/lib/workflow/execution/nodes/math";
+import { executeText, readTextConfig } from "@/lib/workflow/execution/nodes/text";
+import {
+  executeIntervalTrigger,
+  executePageLoadTrigger,
+  readIntervalTriggerConfig,
+} from "@/lib/workflow/execution/nodes/schedule-trigger";
+import {
+  describeFailure,
+  readResilienceConfig,
+  runWithResilience,
+} from "@/lib/workflow/execution/nodes/resilience";
 import { resolveValue } from "@/lib/workflow/variables/variable-resolver";
 import type { VariableContext } from "@/lib/workflow/variables/variable-context";
 function wait(ms: number) {
@@ -46,32 +68,7 @@ function evaluateCondition(
   operator: unknown,
   rightOperand: unknown,
 ): boolean {
-  const left = String(leftOperand ?? "");
-  const right = String(rightOperand ?? "");
-
-  switch (operator) {
-    case "not_equals":
-      return left !== right;
-    case "contains":
-      return left.includes(right);
-    case "not_contains":
-      return !left.includes(right);
-    case "greater_than":
-      return Number(left) > Number(right);
-    case "less_than":
-      return Number(left) < Number(right);
-    case "is_empty":
-      return left.trim().length === 0;
-    case "is_not_empty":
-      return left.trim().length > 0;
-    case "is_true":
-      return left === "true";
-    case "is_false":
-      return left === "false";
-    case "equals":
-    default:
-      return left === right;
-  }
+  return compareValues(leftOperand, operator, rightOperand);
 }
 
 /**
@@ -149,6 +146,8 @@ async function executeNode(
       node: WorkflowNode,
       config: LoopConfig,
     ) => Promise<Record<string, unknown>>;
+    /** What each parent produced, which is what Merge joins. */
+    inputs?: MergeInput[];
   } = {},
 ): Promise<Record<string, unknown>> {
   void input;
@@ -220,6 +219,34 @@ async function executeNode(
 
     case "webhook-trigger":
       return executeWebhookTrigger(readWebhookTriggerConfig(node.data.config));
+
+    case "page-load-trigger":
+      return executePageLoadTrigger();
+
+    case "interval-trigger":
+      return executeIntervalTrigger(
+        readIntervalTriggerConfig(node.data.config),
+      );
+
+    case "merge":
+      return executeMerge(readMergeConfig(node.data.config), options.inputs ?? []);
+
+    case "switch":
+      return executeSwitch(readSwitchConfig(node.data.config));
+
+    case "math": {
+      const config = readMathConfig(node.data.config);
+      const result = executeMath(config);
+
+      return { [config.name]: result.result, ...result };
+    }
+
+    case "text": {
+      const config = readTextConfig(node.data.config);
+      const result = executeText(config, input);
+
+      return { [config.name]: result.text, ...result };
+    }
 
     case "output":
       return executeOutput(readOutputConfig(node.data.config), options);
@@ -343,11 +370,16 @@ function findRootNodes(workflow: Workflow): WorkflowNode[] {
 
 /**
  * Find children of a node.
+ *
+ * `branch` is the handle a branching node chose, so Condition and
+ * Switch are routed the same way: only the chosen handle continues, and
+ * leaving it out asks for every branch, which is how the not-taken ones
+ * get marked as skipped.
  */
 function getChildren(
   workflow: Workflow,
   node: WorkflowNode,
-  conditionResult?: boolean,
+  branch?: string,
 ): WorkflowNode[] {
   const edges = workflow.edges.filter((edge) => {
     if (edge.source !== node.id) {
@@ -362,32 +394,47 @@ function getChildren(
       return edge.sourceHandle !== "body";
     }
 
-    if (node.type !== "condition") {
+    if (!branchesInto(node)) {
       return true;
     }
 
-    /**
-     * Without a result the caller is asking for every branch, which is
-     * how the not-taken children get marked as skipped.
-     */
-    if (conditionResult === undefined) {
+    if (branch === undefined) {
       return true;
     }
 
-    if (edge.sourceHandle === "true") {
-      return conditionResult === true;
-    }
-
-    if (edge.sourceHandle === "false") {
-      return conditionResult === false;
-    }
-
-    return true;
+    return edge.sourceHandle === branch;
   });
 
   return edges
     .map((edge) => workflow.nodes.find((node) => node.id === edge.target))
     .filter((node): node is WorkflowNode => Boolean(node));
+}
+
+/**
+ * Nodes whose output is a choice between handles.
+ */
+function branchesInto(node: WorkflowNode): boolean {
+  return node.type === "condition" || node.type === "switch";
+}
+
+/**
+ * Which handle a branching node followed.
+ */
+function selectedBranch(
+  node: WorkflowNode,
+  output: Record<string, unknown>,
+): string | undefined {
+  if (node.type === "condition") {
+    return typeof output.result === "boolean"
+      ? String(output.result)
+      : undefined;
+  }
+
+  if (node.type === "switch") {
+    return typeof output.branch === "string" ? output.branch : undefined;
+  }
+
+  return undefined;
 }
 
 /**
@@ -633,12 +680,41 @@ async function executeLoopBody(
         },
       };
 
-      const output = await executeNode(executableNode, input, {
-        dryRun: options.dryRun,
-        signal: options.signal,
-        onStreamDelta: options.onStreamDelta,
-        runLoop,
-      });
+      const parentInputs: MergeInput[] = parents.map((parent) => ({
+        nodeId: parent.id,
+        label: parent.data.label,
+        output: outputs.get(parent.id) ?? {},
+      }));
+
+      const resilience = readResilienceConfig(node.data.config);
+
+      const output = await runWithResilience(
+        (attemptSignal) =>
+          executeNode(executableNode, input, {
+            dryRun: options.dryRun,
+            signal: attemptSignal,
+            onStreamDelta: options.onStreamDelta,
+            runLoop,
+            inputs: parentInputs,
+          }),
+        resilience,
+        {
+          signal: options.signal,
+          onRetry: ({ attempt, of, error }) => {
+            const retryLog = createExecutionLog(
+              executionId,
+              "info",
+              `${node.data.label} failed on attempt ${attempt} of ${of}, retrying`,
+              node.id,
+            );
+
+            retryLog.details = { loop: root.data.label, iteration: index + 1, total };
+            retryLog.error = error.message;
+            execution.logs.push(retryLog);
+            onEvent?.({ type: "log", log: retryLog });
+          },
+        },
+      );
 
       const completedAt = new Date().toISOString();
       const duration =
@@ -670,29 +746,31 @@ async function executeLoopBody(
       onEvent?.({ type: "node-completed", nodeId: node.id, output });
       onEvent?.({ type: "log", log: completedLog });
 
-      const conditionResult =
-        node.type === "condition" && typeof output.result === "boolean"
-          ? output.result
-          : undefined;
+      const branch = selectedBranch(node, output);
 
       const allChildren = getChildren(workflow, node);
+      const takenChildren = getChildren(workflow, node, branch);
 
-      for (const child of getChildren(workflow, node, conditionResult)) {
+      for (const child of takenChildren) {
         if (!done.has(child.id)) {
           queue.push(child);
         }
       }
 
-      if (node.type === "condition") {
+      if (branchesInto(node)) {
         for (const child of allChildren) {
           if (!loopOwned.has(child.id)) {
             continue;
           }
 
-          if (!getChildren(workflow, node, conditionResult).some((taken) => taken.id === child.id)) {
+          if (!takenChildren.some((taken) => taken.id === child.id)) {
             markBodySkipped(
               child,
-              `Condition evaluated ${conditionResult ? "true" : "false"} inside the loop.`,
+              `${node.data.label} chose ${
+                node.type === "switch"
+                  ? String(output.label ?? branch)
+                  : String(output.result)
+              } inside the loop.`,
             );
           }
         }
@@ -763,6 +841,8 @@ export async function executeWorkflow(
 
     workflowId: workflow.id,
 
+    workflowName: workflow.name,
+
     status: "running",
 
     startedAt,
@@ -815,6 +895,11 @@ export async function executeWorkflow(
    */
   const failed = new Set<string>();
   const skipped = new Set<string>();
+
+  /**
+   * Nodes that failed but were told to let the run continue.
+   */
+  const continuedErrors = new Set<string>();
   let canceled = false;
 
   /**
@@ -1042,12 +1127,23 @@ export async function executeWorkflow(
 
     /**
      * Check dependencies.
+     *
+     * A merge is the one node that waits for its branches rather than
+     * for all of them: a branch that was not taken, or that failed, must
+     * not keep it waiting for ever.
      */
     const parents = getParents(workflow, node.id);
 
-    const dependenciesReady = parents.every((parent) =>
-      completed.has(parent.id),
-    );
+    const dependenciesReady =
+      node.type === "merge"
+        ? parents.every(
+            (parent) =>
+              completed.has(parent.id) ||
+              skipped.has(parent.id) ||
+              failed.has(parent.id) ||
+              continuedErrors.has(parent.id),
+          )
+        : parents.every((parent) => completed.has(parent.id));
 
     if (!dependenciesReady) {
       /**
@@ -1153,20 +1249,56 @@ export async function executeWorkflow(
         },
       };
 
-      const output = await executeNode(executableNode, input, {
-        ...options,
-        runLoop: runLoopNode,
-        onStreamDelta:
-          node.type === "ai-prompt" && !options.dryRun
-            ? (delta, accumulated) =>
-                onEvent?.({
-                  type: "node-stream",
-                  nodeId: node.id,
-                  delta,
-                  accumulated,
-                })
-            : undefined,
-      });
+      /**
+       * What each parent produced, in connection order. Merge needs to
+       * know which branch produced what, not just the flattened input,
+       * and a branch that never ran contributes nothing.
+       */
+      const parentInputs: MergeInput[] = parents
+        .filter((parent) => outputs.has(parent.id))
+        .map((parent) => ({
+          nodeId: parent.id,
+          label: parent.data.label,
+          output: outputs.get(parent.id) ?? {},
+        }));
+
+      const resilience = readResilienceConfig(node.data.config);
+
+      const output = await runWithResilience(
+        (attemptSignal) =>
+          executeNode(executableNode, input, {
+            ...options,
+            signal: attemptSignal,
+            runLoop: runLoopNode,
+            inputs: parentInputs,
+            onStreamDelta:
+              node.type === "ai-prompt" && !options.dryRun
+                ? (delta, accumulated) =>
+                    onEvent?.({
+                      type: "node-stream",
+                      nodeId: node.id,
+                      delta,
+                      accumulated,
+                    })
+                : undefined,
+          }),
+        resilience,
+        {
+          signal: options.signal,
+          onRetry: ({ attempt, of, error }) => {
+            const retryLog = createExecutionLog(
+              executionId,
+              "info",
+              `${node.data.label} failed on attempt ${attempt} of ${of}, retrying`,
+              node.id,
+            );
+
+            retryLog.error = error.message;
+            execution.logs.push(retryLog);
+            onEvent?.({ type: "log", log: retryLog });
+          },
+        },
+      );
 
       const completedAt = new Date().toISOString();
 
@@ -1267,16 +1399,19 @@ export async function executeWorkflow(
       /**
        * Add children.
        */
-      const conditionResult =
-        node.type === "condition" && typeof output.result === "boolean"
-          ? output.result
-          : undefined;
+      const branch = selectedBranch(node, output);
       const allChildren = getChildren(workflow, node);
-      const children = getChildren(workflow, node, conditionResult);
-      if (node.type === "condition") {
+      const children = getChildren(workflow, node, branch);
+
+      if (branchesInto(node)) {
+        const reason =
+          node.type === "switch"
+            ? `Switch chose ${String(output.label ?? branch)}.`
+            : `Condition evaluated ${String(output.result)}.`;
+
         for (const child of allChildren) {
           if (!children.some((selectedChild) => selectedChild.id === child.id)) {
-            markSkipped(child, `Condition evaluated ${conditionResult ? "true" : "false"}.`);
+            markSkipped(child, reason);
           }
         }
       }
@@ -1294,9 +1429,14 @@ export async function executeWorkflow(
       }
       /**
        * Error message.
+       *
+       * Retries belong in the message: "failed after 3 attempts" is the
+       * difference between a flaky API and a broken node.
        */
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = describeFailure(
+        error instanceof Error ? error : new Error("Unknown error"),
+        readResilienceConfig(node.data.config),
+      );
 
       const completedAt = new Date().toISOString();
 
@@ -1314,10 +1454,38 @@ export async function executeWorkflow(
 
       nodeExecution.duration = duration;
 
+      const keepsGoing = readResilienceConfig(node.data.config).continueOnError;
+
+      if (keepsGoing) {
+        /**
+         * Children need this node's output to be satisfied, so the node
+         * counts as completed for routing while still being reported as
+         * failed. The error travels downstream as part of the output so
+         * a later node can branch on it.
+         */
+        continuedErrors.add(node.id);
+
+        completed.add(node.id);
+
+        outputs.set(node.id, {
+          error: errorMessage,
+          continued: true,
+          nodeLabel: node.data.label,
+        });
+
+        /**
+         * Recorded on the node too, so the run's detail page shows what
+         * a continued node handed on rather than nothing at all.
+         */
+        nodeExecution.output = outputs.get(node.id);
+      }
+
       /**
        * Mark failed.
        */
-      failed.add(node.id);
+      if (!keepsGoing) {
+        failed.add(node.id);
+      }
 
       /**
        * Create error log.
@@ -1355,16 +1523,33 @@ export async function executeWorkflow(
       });
 
       /**
-       * Stop workflow.
+       * Continue on error means the run carries on down the rest of the
+       * graph. Everything else stops where it failed.
        */
-      break;
+      if (!keepsGoing) {
+        break;
+      }
+
+      const children = getChildren(workflow, node);
+
+      for (const child of children) {
+        if (!completed.has(child.id) && !failed.has(child.id)) {
+          queue.push(child);
+        }
+      }
     }
   }
 
   /**
    * Check final status.
+   *
+   * A node that was told to continue on error does not fail the run: the
+   * point of the setting is that the run gets through, and the node is
+   * still reported as failed on its own row.
    */
-  const hasError = execution.nodes.some((node) => node.status === "error");
+  const hasError = execution.nodes.some(
+    (node) => node.status === "error" && !continuedErrors.has(node.nodeId),
+  );
 
   const completedAt = new Date().toISOString();
 
@@ -1382,10 +1567,18 @@ export async function executeWorkflow(
   /**
    * Final log.
    */
+  const completedMessage = canceled
+    ? "Workflow execution canceled"
+    : hasError
+      ? "Workflow execution failed"
+      : continuedErrors.size > 0
+        ? `Workflow execution completed with ${continuedErrors.size} continued error${continuedErrors.size === 1 ? "" : "s"}`
+        : "Workflow execution completed";
+
   const workflowCompletedLog = createExecutionLog(
     executionId,
-    hasError ? "error" : "success",
-    canceled ? "Workflow execution canceled" : hasError ? "Workflow execution failed" : "Workflow execution completed",
+    hasError || canceled ? "error" : "success",
+    completedMessage,
   );
 
   workflowCompletedLog.duration = execution.duration;

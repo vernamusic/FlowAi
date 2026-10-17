@@ -58,14 +58,42 @@ Local storage is unavailable or wiped in some private modes. FlowAI keeps workin
 - A command palette (**Ctrl/⌘ + K**) for finding a workflow, adding a node, or running an action
 - Full keyboard control, with a built-in shortcut reference (`?`)
 
-### 🧩 Ten node types
+### 📊 Executions and what they cost
+
+- Every run is kept in the browser, the **last 20**
+- `/executions` lists them, with status, duration, tokens and cost
+- A run's own page shows its logs, each node's input and output, and what each AI node spent
+- Tokens and cost per workflow, and per day for the last 14 days
+- Costs are marked with `*` when they were counted locally rather than reported by the provider, and a total that mixes priced and unpriced runs says so rather than pretending the rest was free
+
+### 🛡 When a node fails
+
+Every node except a trigger has three settings:
+
+- **Retry** — 1 to 5 extra attempts, with a wait between them. A flaky API gets a second chance instead of failing the run
+- **Timeout** — a deadline for one attempt, so a call that hangs fails the node rather than the whole session
+- **Continue on error** — the run carries on down the rest of the graph. The node still shows as failed, and the error is passed downstream as `error`
+
+### 🧩 Sixteen node types
 
 | Category | Nodes |
 | --- | --- |
-| Triggers | Manual Trigger, Webhook Trigger (simulated) |
+| Triggers | Manual Trigger, Webhook Trigger (simulated), Page Load Trigger, Interval Trigger |
 | AI | AI Prompt |
-| Logic | Condition, Set Variable, JSON Parser, Loop |
+| Logic | Condition, Switch, Merge, Math, Text, Set Variable, JSON Parser, Loop |
 | Actions | HTTP Request, Delay, Output |
+
+**Math** takes an arithmetic expression — `+ - * / % ^`, parentheses, and
+`abs ceil floor max min pow round sqrt` — and never evaluates it as code.
+**Switch** routes to the first case that matches, with a default branch.
+**Merge** joins several branches back into one value.
+
+### ⏱ Triggers that run themselves
+
+Page Load and Interval triggers start the workflow without anyone pressing
+Run. Both only fire **while the editor is open**: FlowAI has no server to
+run them on, so a closed tab means no runs. Interval runs default to a dry
+run, because a timer that repeats forever should not quietly spend money.
 
 ### 🤖 AI that actually streams
 

@@ -3,6 +3,14 @@ import { isTriggerNode } from "@/types/workflow";
 import { CONDITION_HANDLES, LOOP_HANDLES } from "@/constants/edges";
 import { getAiProvider, normalizeBaseUrl } from "./execution/ai/providers";
 import { parseJsonSchema } from "./execution/ai/response-format";
+import { evaluateExpression } from "./execution/nodes/math-expression";
+import { readSwitchConfig, switchHandles } from "./execution/nodes/switch";
+import { readTextConfig } from "./execution/nodes/text";
+import { COMPARISON_OPERATORS } from "./execution/nodes/comparison";
+import {
+  MAX_RETRIES,
+  MAX_TIMEOUT_MS,
+} from "./execution/nodes/resilience";
 import { auditWorkflowVariables } from "./variables/variable-audit";
 import { MAX_DELAY_MS, MIN_DELAY_MS } from "./execution/nodes/delay";
 
@@ -14,6 +22,10 @@ import { MAX_DELAY_MS, MIN_DELAY_MS } from "./execution/nodes/delay";
  */
 function isHandleOf(handle: string | undefined, handles: readonly string[]) {
   return handle !== undefined && handles.includes(handle);
+}
+
+function readComparisonOperator(value: string) {
+  return COMPARISON_OPERATORS.find((item) => item.value === value);
 }
 
 export interface WorkflowValidationIssue {
@@ -177,7 +189,112 @@ function validateNodeConfig(node: WorkflowNode): WorkflowValidationIssue[] {
       }
     }
   }
-  return [];
+  if (node.type === "math") {
+    const expression = typeof config.expression === "string" ? config.expression.trim() : "";
+    if (!expression) {
+      return [{ code: "missing-expression", nodeId: node.id, message: `${node.data.label} needs an expression to calculate.` }];
+    }
+
+    /**
+     * The formula is checked here as well as at run time, because a
+     * syntax mistake should be visible before the run rather than after.
+     */
+    try {
+      evaluateExpression(expression);
+    } catch (error) {
+      return [{
+        code: "invalid-expression",
+        nodeId: node.id,
+        message: error instanceof Error ? error.message : `${node.data.label} has an expression it cannot read.`,
+      }];
+    }
+  }
+  if (node.type === "switch") {
+    const issues: WorkflowValidationIssue[] = [];
+    const switchConfig = readSwitchConfig(config);
+
+    for (const rule of switchConfig.rules) {
+      const operator = readComparisonOperator(rule.operator);
+      const left = typeof rule.leftOperand === "string" ? rule.leftOperand.trim() : "";
+
+      if (!left) {
+        issues.push({
+          code: "incomplete-switch-case",
+          nodeId: node.id,
+          message: `${node.data.label} case “${rule.label}” needs a value to compare.`,
+        });
+        continue;
+      }
+
+      if (operator?.needsValue && !String(rule.rightOperand ?? "").trim()) {
+        issues.push({
+          code: "incomplete-switch-case",
+          nodeId: node.id,
+          message: `${node.data.label} case “${rule.label}” needs a value to compare against.`,
+        });
+      }
+    }
+
+    return issues;
+  }
+  if (node.type === "text") {
+    const operation = readTextConfig(config).operation;
+
+    if (operation === "join") {
+      return [];
+    }
+
+    if (operation === "remove" && !String(config.second ?? "").trim()) {
+      return [{
+        code: "missing-remove-value",
+        nodeId: node.id,
+        message: `${node.data.label} needs the characters to remove.`,
+      }];
+    }
+
+    return [];
+  }
+
+  return validateResilience(node, config);
+}
+
+/**
+ * Retry, deadline and continue-on-error apply to every node, so a value
+ * outside the allowed range is worth catching before the run.
+ */
+function validateResilience(
+  node: WorkflowNode,
+  config: Record<string, unknown>,
+): WorkflowValidationIssue[] {
+  const issues: WorkflowValidationIssue[] = [];
+
+  const retries = config.retries;
+
+  if (
+    retries !== undefined &&
+    (typeof retries !== "number" || retries < 0 || retries > MAX_RETRIES)
+  ) {
+    issues.push({
+      code: "invalid-retries",
+      nodeId: node.id,
+      message: `${node.data.label} can retry between 0 and ${MAX_RETRIES} times.`,
+    });
+  }
+
+  const timeout = config.timeoutMs;
+
+  if (
+    timeout !== undefined &&
+    (typeof timeout !== "number" || timeout < 0 || timeout > MAX_TIMEOUT_MS)
+  ) {
+    issues.push({
+      code: "invalid-timeout",
+      nodeId: node.id,
+      message: `${node.data.label} needs a timeout between 0 and ${MAX_TIMEOUT_MS}ms.`,
+    });
+  }
+
+  return issues;
 }
 
 export function validateConnection(workflow: Workflow, edge: WorkflowEdge): ValidationResult {
@@ -189,9 +306,11 @@ export function validateConnection(workflow: Workflow, edge: WorkflowEdge): Vali
   if (target && isTriggerNode(target.type)) issues.push({ code: "trigger-input", nodeId: target.id, message: `A ${target.data.label} cannot have an incoming connection.` });
   if (source?.type === "condition" && !isHandleOf(edge.sourceHandle, CONDITION_HANDLES)) issues.push({ code: "condition-handle", nodeId: source.id, message: "Conditions must use their True or False branch." });
   if (source?.type === "loop" && !isHandleOf(edge.sourceHandle, LOOP_HANDLES)) issues.push({ code: "loop-handle", nodeId: source.id, message: "Loops must use their Body handle to repeat, or the After handle to continue once." });
-  if (source && source.type !== "condition" && source.type !== "loop" && edge.sourceHandle) issues.push({ code: "unexpected-handle", nodeId: source.id, message: "This node does not have named output branches." });
+  if (source?.type === "switch" && !isHandleOf(edge.sourceHandle, switchHandles(readSwitchConfig(source.data.config)).map((handle) => handle.id))) issues.push({ code: "switch-handle", nodeId: source.id, message: `${source.data.label} only has the handles for its own cases and its default branch.` });
+  if (source && source.type !== "condition" && source.type !== "loop" && source.type !== "switch" && edge.sourceHandle) issues.push({ code: "unexpected-handle", nodeId: source.id, message: "This node does not have named output branches." });
   if (workflow.edges.some((item) => item.source === edge.source && item.target === edge.target && item.sourceHandle === edge.sourceHandle)) issues.push({ code: "duplicate-edge", message: "That connection already exists." });
   if (source?.type === "condition" && workflow.edges.some((item) => item.source === edge.source && item.sourceHandle === edge.sourceHandle)) issues.push({ code: "duplicate-branch", nodeId: source.id, message: `The ${edge.sourceHandle === "true" ? "True" : "False"} branch is already connected.` });
+  if (source?.type === "switch" && workflow.edges.some((item) => item.source === edge.source && item.sourceHandle === edge.sourceHandle)) issues.push({ code: "duplicate-branch", nodeId: source.id, message: `That ${edge.sourceHandle} branch is already connected.` });
   if (source?.type === "loop" && edge.sourceHandle === "after" && workflow.edges.some((item) => item.source === edge.source && item.sourceHandle === "after")) issues.push({ code: "duplicate-after", nodeId: source.id, message: "The After handle is already connected." });
   if (!issues.length && hasCycle({ ...workflow, edges: [...workflow.edges, edge] })) issues.push({ code: "cycle", message: "Connections cannot create a cycle." });
   return { valid: issues.length === 0, issues };

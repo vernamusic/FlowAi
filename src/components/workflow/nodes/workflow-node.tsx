@@ -13,6 +13,12 @@ import {
   X,
 } from "lucide-react";
 
+import {
+  DEFAULT_SWITCH_HANDLE,
+  readSwitchConfig,
+  switchHandles,
+} from "@/lib/workflow/execution/nodes/switch";
+
 import type {
   NodeExecutionStatus,
   NodeType,
@@ -25,6 +31,31 @@ const icons = {
   logic: GitBranch,
   action: Globe,
 };
+
+/**
+ * Switch cases are numbered by the user, so they get their own colours
+ * rather than the two a condition has.
+ *
+ * Written out in full because Tailwind only generates the classes it can
+ * find spelled out in the source.
+ */
+const caseHandleClasses = [
+  "!bg-sky-400",
+  "!bg-violet-400",
+  "!bg-emerald-400",
+  "!bg-amber-400",
+  "!bg-rose-400",
+  "!bg-cyan-400",
+];
+
+const caseDotClasses = [
+  "bg-sky-400",
+  "bg-violet-400",
+  "bg-emerald-400",
+  "bg-amber-400",
+  "bg-rose-400",
+  "bg-cyan-400",
+];
 
 export function WorkflowNode({ data, selected }: NodeProps) {
   const nodeData = data as unknown as WorkflowNodeData & {
@@ -77,6 +108,15 @@ export function WorkflowNode({ data, selected }: NodeProps) {
   const isCondition = nodeData.type === "condition";
   const isTrigger = nodeData.category === "trigger";
   const isLoop = nodeData.type === "loop";
+  const isSwitch = nodeData.type === "switch";
+
+  /**
+   * A switch draws a handle per case, which only exist once the cases
+   * do, so they are read from the same place the engine reads them.
+   */
+  const switchHandlesForNode = isSwitch
+    ? switchHandles(readSwitchConfig(nodeData.config ?? {}))
+    : [];
 
   return (
     <div
@@ -138,9 +178,30 @@ export function WorkflowNode({ data, selected }: NodeProps) {
       {/* Body */}
 
       <div className="px-4 py-3">
-        <p className="text-xs leading-5 text-zinc-500">
-          {nodeData.description}
-        </p>
+        {isSwitch ? (
+          <ul className="space-y-1">
+            {switchHandlesForNode.map((handle, index) => (
+              <li
+                key={handle.id}
+                className="flex items-center gap-2 text-[10px] text-zinc-500"
+              >
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                    handle.id === DEFAULT_SWITCH_HANDLE
+                      ? "bg-zinc-600"
+                      : caseDotClasses[index % caseDotClasses.length]
+                  }`}
+                />
+
+                <span className="truncate">{handle.label}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs leading-5 text-zinc-500">
+            {nodeData.description}
+          </p>
+        )}
 
         {/* Execution Status */}
 
@@ -164,13 +225,29 @@ export function WorkflowNode({ data, selected }: NodeProps) {
 
       {/* Source Handle */}
 
-      {!isCondition && !isLoop && (
+      {!isCondition && !isLoop && !isSwitch && (
         <Handle
           type="source"
           position={Position.Bottom}
           className="!h-2 !w-2 !border-0 !bg-zinc-500"
         />
       )}
+
+      {isSwitch &&
+        switchHandlesForNode.map((handle, index) => (
+          <Handle
+            key={handle.id}
+            id={handle.id}
+            type="source"
+            position={Position.Right}
+            style={{ top: handle.top }}
+            className={`!h-2.5 !w-2.5 !border-0 ${
+              handle.id === DEFAULT_SWITCH_HANDLE
+                ? "!bg-zinc-500"
+                : caseHandleClasses[index % caseHandleClasses.length]
+            }`}
+          />
+        ))}
 
       {isLoop && (
         <>

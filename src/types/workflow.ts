@@ -1,8 +1,14 @@
 export type NodeType =
   | "manual-trigger"
   | "webhook-trigger"
+  | "page-load-trigger"
+  | "interval-trigger"
   | "ai-prompt"
   | "condition"
+  | "switch"
+  | "merge"
+  | "math"
+  | "text"
   | "http-request"
   | "transform"
   | "json-parser"
@@ -15,10 +21,28 @@ export type NodeCategory = "trigger" | "ai" | "logic" | "action";
 /**
  * Nodes that start a workflow. Triggers never accept an incoming edge.
  */
-export const TRIGGER_NODE_TYPES: NodeType[] = ["manual-trigger", "webhook-trigger"];
+export const TRIGGER_NODE_TYPES: NodeType[] = [
+  "manual-trigger",
+  "webhook-trigger",
+  "page-load-trigger",
+  "interval-trigger",
+];
+
+/**
+ * Triggers that start a workflow on their own while the editor is open,
+ * rather than waiting for a person to press Run.
+ */
+export const SCHEDULED_TRIGGER_TYPES: NodeType[] = [
+  "page-load-trigger",
+  "interval-trigger",
+];
 
 export function isTriggerNode(type: NodeType): boolean {
   return TRIGGER_NODE_TYPES.includes(type);
+}
+
+export function isScheduledTriggerNode(type: NodeType): boolean {
+  return SCHEDULED_TRIGGER_TYPES.includes(type);
 }
 
 export interface WorkflowNodePosition {
@@ -122,6 +146,12 @@ export interface WorkflowExecution {
   id: string;
 
   workflowId: string;
+
+  /**
+   * Stored with the run so history still reads correctly after the
+   * workflow it belongs to is renamed or deleted.
+   */
+  workflowName?: string;
 
   status: ExecutionStatus;
 

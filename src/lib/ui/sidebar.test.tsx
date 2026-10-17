@@ -17,10 +17,12 @@ import {
 const push = vi.fn();
 
 /**
- * The top bar now reaches the router through the command palette.
+ * The top bar now reaches the router through the command palette, and
+ * the sidebar needs the current path to mark where you are.
  */
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
+  usePathname: () => "/workflows",
 }));
 
 beforeEach(() => {

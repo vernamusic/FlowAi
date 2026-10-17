@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useSyncExternalStore } from "react";
 
 import {
@@ -34,6 +35,7 @@ const navigation = [
   {
     label: "Executions",
     icon: BarChart3,
+    href: "/executions",
   },
   {
     label: "Templates",
@@ -62,6 +64,8 @@ function labelClass(visible: boolean) {
 }
 
 export function Sidebar() {
+  const pathname = usePathname();
+
   const isCollapsed = useSyncExternalStore(
     subscribeToSidebar,
     getCollapsed,
@@ -156,43 +160,36 @@ export function Sidebar() {
           <nav className="flex-1 space-y-1 p-3">
             {navigation.map((item) => {
               const Icon = item.icon;
+              const isActive =
+                item.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(item.href);
 
-              const content = (
-                <>
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center">
-                    <Icon className="h-4 w-4 text-zinc-300" />
-                  </div>
-
-                  <span
-                    className={`text-sm text-white ${labelClass(showLabels)}`}
-                    title={showLabels ? undefined : item.label}
-                  >
-                    {item.label}
-                  </span>
-                </>
-              );
-
-              const className =
-                "flex h-10 w-full items-center overflow-hidden rounded-lg px-2 text-white transition-colors hover:bg-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400";
-
-              return item.href ? (
+              return (
                 <Link
                   key={item.label}
                   href={item.href}
                   onClick={() => setMobileSidebarOpen(false)}
-                  className={className}
+                  aria-current={isActive ? "page" : undefined}
+                  title={showLabels ? undefined : item.label}
+                  className={`flex h-10 w-full items-center overflow-hidden rounded-lg px-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 ${
+                    isActive
+                      ? "bg-zinc-900 text-white"
+                      : "text-zinc-400 hover:bg-zinc-900 hover:text-white"
+                  }`}
                 >
-                  {content}
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center">
+                    <Icon
+                      className={`h-4 w-4 ${isActive ? "text-violet-300" : "text-zinc-300"}`}
+                    />
+                  </div>
+
+                  <span
+                    className={`text-sm ${isActive ? "text-white" : "text-zinc-300"} ${labelClass(showLabels)}`}
+                  >
+                    {item.label}
+                  </span>
                 </Link>
-              ) : (
-                <div
-                  key={item.label}
-                  aria-disabled="true"
-                  title={`${item.label} is coming soon`}
-                  className={`${className} cursor-not-allowed opacity-45 hover:bg-transparent`}
-                >
-                  {content}
-                </div>
               );
             })}
           </nav>

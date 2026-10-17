@@ -2,11 +2,17 @@ import {
   Bell,
   Bot,
   Braces,
+  Calculator,
   Clock,
   GitBranch,
+  GitMerge,
   Globe,
+  ListTree,
+  PanelsTopLeft,
   Play,
+  RefreshCw,
   Repeat,
+  Type,
   Webhook,
 } from "lucide-react";
 
@@ -50,6 +56,30 @@ export const NODE_DEFINITIONS: NodeDefinition[] = [
   },
 
   {
+    type: "page-load-trigger",
+
+    label: "Page Load Trigger",
+
+    description: "Run when you open this workflow",
+
+    category: "trigger",
+
+    icon: PanelsTopLeft,
+  },
+
+  {
+    type: "interval-trigger",
+
+    label: "Interval Trigger",
+
+    description: "Run again every few minutes",
+
+    category: "trigger",
+
+    icon: RefreshCw,
+  },
+
+  {
     type: "ai-prompt",
 
     label: "AI Prompt",
@@ -71,6 +101,54 @@ export const NODE_DEFINITIONS: NodeDefinition[] = [
     category: "logic",
 
     icon: GitBranch,
+  },
+
+  {
+    type: "switch",
+
+    label: "Switch",
+
+    description: "Route to the first case that matches",
+
+    category: "logic",
+
+    icon: ListTree,
+  },
+
+  {
+    type: "merge",
+
+    label: "Merge",
+
+    description: "Combine what several branches produced",
+
+    category: "logic",
+
+    icon: GitMerge,
+  },
+
+  {
+    type: "math",
+
+    label: "Math",
+
+    description: "Calculate a number from an expression",
+
+    category: "logic",
+
+    icon: Calculator,
+  },
+
+  {
+    type: "text",
+
+    label: "Text",
+
+    description: "Clean up, join, or format text",
+
+    category: "logic",
+
+    icon: Type,
   },
 
   {

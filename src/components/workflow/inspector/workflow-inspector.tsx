@@ -13,9 +13,17 @@ import { ConditionInspector } from "./condition-inspector";
 import { DelayInspector } from "./delay-inspector";
 import { JsonParserInspector } from "./json-parser-inspector";
 import { LoopInspector } from "./loop-inspector";
+import { MathInspector } from "./math-inspector";
+import { MergeInspector } from "./merge-inspector";
 import { OutputInspector } from "./output-inspector";
+import { ResilienceFields } from "./resilience-fields";
+import { ScheduleTriggerInspector } from "./schedule-trigger-inspector";
+import { SwitchInspector } from "./switch-inspector";
+import { TextInspector } from "./text-inspector";
 import { TransformInspector } from "./transform-inspector";
 import { WebhookTriggerInspector } from "./webhook-trigger-inspector";
+
+import { isTriggerNode } from "@/types/workflow";
 
 interface WorkflowInspectorProps {
   className?: string;
@@ -128,6 +136,22 @@ export function WorkflowInspector({
           <WebhookTriggerInspector key={node.id} nodeId={node.id} />
         )}
 
+        {node.type === "page-load-trigger" && (
+          <ScheduleTriggerInspector
+            key={node.id}
+            nodeId={node.id}
+            variant="page-load"
+          />
+        )}
+
+        {node.type === "interval-trigger" && (
+          <ScheduleTriggerInspector
+            key={node.id}
+            nodeId={node.id}
+            variant="interval"
+          />
+        )}
+
         {node.type === "ai-prompt" && (
           <AIPromptInspector key={node.id} nodeId={node.id} />
         )}
@@ -139,6 +163,14 @@ export function WorkflowInspector({
         {node.type === "condition" && (
           <ConditionInspector key={node.id} nodeId={node.id} />
         )}
+
+        {node.type === "switch" && <SwitchInspector key={node.id} nodeId={node.id} />}
+
+        {node.type === "merge" && <MergeInspector key={node.id} nodeId={node.id} />}
+
+        {node.type === "math" && <MathInspector key={node.id} nodeId={node.id} />}
+
+        {node.type === "text" && <TextInspector key={node.id} nodeId={node.id} />}
 
         {node.type === "transform" && (
           <TransformInspector key={node.id} nodeId={node.id} />
@@ -154,23 +186,12 @@ export function WorkflowInspector({
 
         {node.type === "output" && <OutputInspector key={node.id} nodeId={node.id} />}
 
-        {![
-          "manual-trigger",
-          "webhook-trigger",
-          "ai-prompt",
-          "http-request",
-          "condition",
-          "transform",
-          "json-parser",
-          "loop",
-          "delay",
-          "output",
-        ].includes(node.type) && (
-          <p className="text-xs text-zinc-600">
-            Configuration for this node is coming soon.
-          </p>
-        )}
-          </div>
+        {/**
+         * Retrying a node that only starts a run would mean retrying the
+         * start, which is not a thing.
+         */}
+        {!isTriggerNode(node.type) && <ResilienceFields nodeId={node.id} />}
+      </div>
         </>
       )}
     </aside>
