@@ -32,6 +32,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "Everywhere",
     shortcuts: [
+      { keys: ["Ctrl", "K"], description: "Open the command palette" },
       { keys: ["?"], description: "Open the shortcut list" },
       { keys: ["Esc"], description: "Close a dialog or clear the selection" },
     ],

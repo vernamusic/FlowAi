@@ -12,6 +12,7 @@ import { isTypingTarget } from "@/lib/shortcuts/shortcuts";
 import { useWorkflowStore } from "@/store/workflow.store";
 import { WorkflowCanvas } from "./workflow-canvas";
 import { EditorSkeleton, WorkflowNotFound } from "./workflow-not-found";
+import { EditorCommandBridge } from "./editor-command-bridge";
 import { WorkflowInspector } from "@/components/workflow/inspector/workflow-inspector";
 
 interface WorkflowEditorProps {
@@ -130,6 +131,12 @@ export function WorkflowEditor({ workflowId }: WorkflowEditorProps) {
   return (
     <ReactFlowProvider>
       <Walkthrough autoStart={isFirstRun} />
+
+      {/**
+       * The palette is rendered by the top bar on every page; this is
+       * what lets it offer editor actions while an editor is open.
+       */}
+      <EditorCommandBridge />
 
       <div className="relative flex h-full min-h-0 w-full overflow-hidden">
         {/* Node Library */}

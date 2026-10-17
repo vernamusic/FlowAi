@@ -1,11 +1,7 @@
 "use client";
 
-import { useReactFlow } from "@xyflow/react";
-
 import { NODE_DEFINITIONS } from "@/constants/nodes";
-import { createWorkflowNode } from "@/lib/workflow/create-node";
-import { useWorkflowStore } from "@/store/workflow.store";
-import type { NodeType } from "@/types/workflow";
+import { useAddNodeAtCenter } from "@/components/workflow/use-add-node-at-center";
 
 import { HelpTip } from "@/components/ui/help-tip";
 
@@ -33,9 +29,7 @@ interface NodeLibraryProps {
 }
 
 export function NodeLibrary({ className = "" }: NodeLibraryProps) {
-  const { screenToFlowPosition } = useReactFlow();
-  const addNodeToWorkflow = useWorkflowStore((state) => state.addNode);
-  const selectNodeInWorkflow = useWorkflowStore((state) => state.selectNode);
+  const handleAdd = useAddNodeAtCenter();
 
   const handleDragStart = (
     event: React.DragEvent<HTMLDivElement>,
@@ -44,28 +38,6 @@ export function NodeLibrary({ className = "" }: NodeLibraryProps) {
     event.dataTransfer.setData("application/flowai-node", type);
 
     event.dataTransfer.effectAllowed = "move";
-  };
-
-  /**
-   * Clicking adds the node in the middle of the view, which is the only
-   * way to build a workflow on a touch device.
-   */
-  const handleAdd = (type: NodeType) => {
-    const position = screenToFlowPosition({
-      x: window.innerWidth / 2,
-      y: window.innerHeight / 2,
-    });
-
-    const node = createWorkflowNode({
-      type,
-      position: {
-        x: position.x - 128,
-        y: position.y - 60,
-      },
-    });
-
-    addNodeToWorkflow(node);
-    selectNodeInWorkflow(node.id);
   };
 
   return (
@@ -77,9 +49,9 @@ export function NodeLibrary({ className = "" }: NodeLibraryProps) {
           <h2 className="text-sm font-semibold">Node Library</h2>
 
           <HelpTip label="About the node library">
-            Drag a node onto the canvas, or click it to add the node to the
-            middle of your view. Ten node types cover triggers, AI, logic, and
-            actions.
+            Drag a node onto the canvas, click it to add the node to the
+            middle of your view, or press Ctrl/⌘ + K and search for it.
+            Ten node types cover triggers, AI, logic, and actions.
           </HelpTip>
         </div>
 

@@ -50,10 +50,12 @@ Local storage is unavailable or wiped in some private modes. FlowAI keeps workin
 
 ### 🎨 Visual Workflow Builder
 
-- Drag a node from the library, or **click it** to drop it in the middle of the view
-- Connect nodes by dragging between handles
+- Drag a node from the library, **click it** to drop it in the middle of the view, or add one from the command palette
+- Connect nodes by dragging between handles, and delete a connection by clicking it and pressing Delete
 - True / False branches on conditions, **Body / After** branches on loops
 - Undo / redo, duplicate, delete, mini-map, zoom and pan
+- Snap to grid, and hold **Space** to pan from anywhere, including over a node
+- A command palette (**Ctrl/⌘ + K**) for finding a workflow, adding a node, or running an action
 - Full keyboard control, with a built-in shortcut reference (`?`)
 
 ### 🧩 Ten node types

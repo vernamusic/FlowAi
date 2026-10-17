@@ -1,8 +1,9 @@
 "use client";
 
 import { Menu } from "lucide-react";
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 
+import { CommandPalette } from "@/components/command-palette/command-palette";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { ShortcutsDialog } from "@/components/ui/shortcuts-dialog";
 import {
@@ -17,6 +18,12 @@ export function Topbar() {
     isMobileSidebarOpen,
     () => false,
   );
+
+  /**
+   * Owned here so the command palette can open the shortcut list, which
+   * otherwise only answered to its own button and the `?` key.
+   */
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-4 sm:px-6">
@@ -46,7 +53,12 @@ export function Topbar() {
 
       {/* Actions */}
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-        <ShortcutsDialog />
+        <CommandPalette onOpenShortcuts={() => setShortcutsOpen(true)} />
+
+        <ShortcutsDialog
+          open={shortcutsOpen}
+          onOpenChange={setShortcutsOpen}
+        />
 
         <ThemeToggle />
       </div>

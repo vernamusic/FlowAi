@@ -7,6 +7,7 @@ import { useRef, useState, useSyncExternalStore } from "react";
 import { RunWorkflowButton } from "@/components/workflow/execution/run-workflow-button";
 import { useWorkflowStore } from "@/store/workflow.store";
 import { parseImportedWorkflow } from "@/lib/workflow/validation";
+import { downloadWorkflowJson } from "@/lib/workflow/export-workflow";
 import {
   getWorkflowStorageStatus,
   subscribeToWorkflowStorage,
@@ -43,13 +44,8 @@ export function WorkflowActions({ workflowId }: WorkflowActionsProps) {
 
   const handleExport = () => {
     if (!workflow) return;
-    const blob = new Blob([JSON.stringify(workflow, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${workflow.name.trim().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "workflow"}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+
+    downloadWorkflowJson(workflow);
   };
 
   const handleImport = async (event: React.ChangeEvent<HTMLInputElement>) => {

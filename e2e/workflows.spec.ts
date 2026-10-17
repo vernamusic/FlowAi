@@ -721,6 +721,78 @@ test.describe("sidebar", () => {
   });
 });
 
+test.describe("command palette", () => {
+  test("opens with the keyboard and finds a saved workflow", async ({ page }) => {
+    await openWorkflowsPage(page);
+    await page.getByRole("button", { name: /new workflow/i }).first().click();
+    await expect(page).toHaveURL(/\/workflows\/[0-9a-f-]{36}$/);
+    await dismissTour(page);
+
+    const name = page.locator("input").first();
+    await name.fill("Quarterly report");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+
+    await openWorkflowsPage(page);
+    await page.keyboard.press("Control+k");
+
+    const input = page.getByRole("combobox", { name: /search commands/i });
+
+    await expect(input).toBeVisible();
+    await input.fill("quarterly");
+
+    await page.getByRole("option", { name: /quarterly report/i }).click();
+
+    await expect(page.locator("input").first()).toHaveValue("Quarterly report");
+  });
+
+  test("adds a node from inside the editor", async ({ page }) => {
+    await createWorkflow(page);
+
+    await page.keyboard.press("Control+k");
+    await page.getByRole("combobox", { name: /search commands/i }).fill("delay");
+
+    await page.getByRole("option", { name: /add delay/i }).click();
+
+    await expect(page.locator(".react-flow__node")).toHaveCount(1);
+    await expect(
+      page.getByRole("heading", { name: "Delay" }),
+    ).toBeVisible();
+  });
+
+  test("leaves editor commands out when there is no editor", async ({ page }) => {
+    await openWorkflowsPage(page);
+
+    await page.keyboard.press("Control+k");
+    await page.getByRole("combobox", { name: /search commands/i }).fill("add delay");
+
+    await expect(page.getByText(/nothing matches/i)).toBeVisible();
+  });
+
+  test("closes on Escape and reopens on the same key", async ({ page }) => {
+    await openWorkflowsPage(page);
+
+    await page.keyboard.press("Control+k");
+    await expect(page.getByRole("combobox")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("combobox")).toBeHidden();
+
+    await page.keyboard.press("Control+k");
+    await expect(page.getByRole("combobox")).toBeVisible();
+  });
+
+  test("runs the workflow from the palette", async ({ page }) => {
+    await useTemplate(page);
+
+    await page.keyboard.press("Control+k");
+    await page.getByRole("combobox", { name: /search commands/i }).fill("dry run");
+
+    await page.getByRole("option", { name: /dry run workflow/i }).click();
+
+    await expect(page.getByText("Workflow Execution").first()).toBeVisible();
+  });
+});
+
 test.describe("theme", () => {
   test("switches between light and dark and remembers the choice", async ({
     page,

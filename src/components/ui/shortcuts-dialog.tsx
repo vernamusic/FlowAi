@@ -9,15 +9,36 @@ import {
   SHORTCUT_GROUPS,
 } from "@/lib/shortcuts/shortcuts";
 
+interface ShortcutsDialogProps {
+  /**
+   * Lets another surface open the list, such as the command palette.
+   * Without these the dialog keeps its own state and its own button.
+   */
+  open?: boolean;
+
+  onOpenChange?: (open: boolean) => void;
+}
+
 /**
  * Keyboard reference, opened from the topbar or with `?`.
  */
-export function ShortcutsDialog() {
-  const [isOpen, setIsOpen] = useState(false);
+export function ShortcutsDialog({ open, onOpenChange }: ShortcutsDialogProps = {}) {
+  const [internalOpen, setInternalOpen] = useState(false);
   const apple = isApplePlatform();
 
-  const open = useCallback(() => setIsOpen(true), []);
-  const close = useCallback(() => setIsOpen(false), []);
+  const isControlled = open !== undefined;
+  const isOpen = isControlled ? open : internalOpen;
+
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (!isControlled) setInternalOpen(next);
+
+      onOpenChange?.(next);
+    },
+    [isControlled, onOpenChange],
+  );
+
+  const close = useCallback(() => setOpen(false), [setOpen]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -27,20 +48,20 @@ export function ShortcutsDialog() {
 
       if (!event.metaKey && !event.ctrlKey && !event.altKey) {
         event.preventDefault();
-        setIsOpen((current) => !current);
+        setOpen(!isOpen);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
 
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [isOpen, setOpen]);
 
   return (
     <>
       <button
         type="button"
-        onClick={open}
+        onClick={() => setOpen(true)}
         aria-haspopup="dialog"
         aria-label="Keyboard shortcuts"
         title="Keyboard shortcuts"

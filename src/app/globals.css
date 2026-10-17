@@ -101,6 +101,22 @@ body {
   scrollbar-color: #a1a1aa transparent;
 }
 
+/**
+ * The command palette draws its own focus ring around the whole field,
+ * so the one on the input inside it would be a second box.
+ *
+ * Written here rather than with a utility class because the rule above
+ * is unlayered, and unlayered rules win over Tailwind's layered ones.
+ */
+.command-search:focus-within {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+
+.command-search input:focus-visible {
+  outline: none;
+}
+
 [data-theme="light"] *::-webkit-scrollbar-thumb {
   background: #d4d4d8;
 }

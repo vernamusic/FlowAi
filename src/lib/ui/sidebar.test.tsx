@@ -14,6 +14,15 @@ import {
   writeSidebarCollapsed,
 } from "@/lib/ui/sidebar";
 
+const push = vi.fn();
+
+/**
+ * The top bar now reaches the router through the command palette.
+ */
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push }),
+}));
+
 beforeEach(() => {
   window.localStorage.clear();
   document.documentElement.removeAttribute(sidebarAttribute);
